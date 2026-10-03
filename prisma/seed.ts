@@ -1,7 +1,8 @@
 // 种子数据：为「一张试听券的一生」演示铺齐所有状态。
 // 三个数字开箱即有戏：待跟进（tried+ATTENDED 未跟进）、待续费（ending）、唤醒（churning）；
-// 另铺：满班（Y10英语B 容量 2 已满，R7 拒绝）、冲突（王小宝在 Y11化学，试数学撞 R1）、
-//       过期券（罗盘，R9 拒绝）、NOSHOW 券（可重发）、双班学生（林晨）。
+// 另铺：满班（Year 6 English 容量 2 已满，R7 拒绝）、冲突（王小宝在 Selective Program，试数学撞 R1）、
+//       过期券（罗盘，R9 拒绝）、NOSHOW 券（可重发）、双班学生（林晨：VCE Chemistry + UCAT）。
+// 班级体系对齐 austineducation.com.au：VCE 按学科 Units 1–4、Year 分层班、Selective Entry（Y8–9）、UCAT（纯线上）。
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { addDays, melbourneToday, nextOccurrence } from "../src/lib/time";
@@ -42,67 +43,68 @@ type Spec = {
 
 const AMY: Spec[] = [
   { name: "张小弟", phone: "0401000001", admin: "amy", status: "tried", statusChangedDaysAgo: 3,
-    voucher: { kind: "TRIAL", subject: "数学", status: "ATTENDED", issuedDaysAgo: 10, outcomeNote: "基础扎实，互动积极，家长在场陪同", source: "大众点评" } },
+    voucher: { kind: "TRIAL", subject: "Maths Methods", status: "ATTENDED", issuedDaysAgo: 10, outcomeNote: "基础扎实，互动积极，家长在场陪同", source: "大众点评" } },
   { name: "李小妹", phone: "0401000002", admin: "amy", status: "tried", statusChangedDaysAgo: 2,
-    voucher: { kind: "TRIAL", subject: "英语", status: "ATTENDED", issuedDaysAgo: 12, outcomeNote: "口语好，语法弱", followedUpDaysAgo: 1 } },
+    voucher: { kind: "TRIAL", subject: "English", status: "ATTENDED", issuedDaysAgo: 12, outcomeNote: "口语好，语法弱", followedUpDaysAgo: 1 } },
   { name: "王小宝", phone: "0401000003", admin: "amy", status: "subscribed",
-    enroll: [{ cls: "Y11 化学", weeks: 0 }], targetBalance: 5,
-    voucher: { kind: "TRIAL", subject: "数学", status: "ISSUED", issuedDaysAgo: 2, source: "小红书" } },
+    enroll: [{ cls: "Selective Entry Program (Y8-9)", weeks: 0 }], targetBalance: 5,
+    voucher: { kind: "TRIAL", subject: "Maths", status: "ISSUED", issuedDaysAgo: 2, source: "小红书" } },
   { name: "赵小虎", phone: "0401000004", admin: "amy", status: "new",
-    voucher: { kind: "TRIAL", subject: "物理", status: "REDEEMED", issuedDaysAgo: 5, redeemInto: "Y12 物理" } },
+    voucher: { kind: "TRIAL", subject: "Chemistry", status: "REDEEMED", issuedDaysAgo: 5, redeemInto: "VCE Chemistry U3&4" } },
   { name: "陈小明", phone: "0401000005", admin: "amy", status: "subscribed",
-    enroll: [{ cls: "Y10 数学A", weeks: 6 }], targetBalance: 6 },
+    enroll: [{ cls: "VCE Maths Methods U1&2", weeks: 6 }], targetBalance: 6 },
   { name: "陈小红", phone: "0401000006", admin: "amy", status: "subscribed",
-    enroll: [{ cls: "Y11 英语A", weeks: 8 }], targetBalance: 8, grant: 2 },
+    enroll: [{ cls: "VCE English/EAL U1&2", weeks: 8 }], targetBalance: 8, grant: 2 },
   { name: "周天乐", phone: "0401000007", admin: "amy", status: "ending", statusChangedDaysAgo: 5,
-    enroll: [{ cls: "Y10 数学A", weeks: 8 }], targetBalance: 3 },
+    enroll: [{ cls: "VCE Maths Methods U1&2", weeks: 8 }], targetBalance: 3 },
   { name: "吴优", phone: "0401000008", admin: "amy", status: "ending", statusChangedDaysAgo: 3,
-    enroll: [{ cls: "Y10 英语B", weeks: 6 }], targetBalance: 2 },
+    enroll: [{ cls: "Year 6 English & Writing", weeks: 6 }], targetBalance: 2 },
   { name: "郑安琪", phone: "0401000009", admin: "amy", status: "churning", statusChangedDaysAgo: 20,
-    enroll: [{ cls: "Y11 化学", weeks: 10 }], targetBalance: 0, grant: 1 },
+    enroll: [{ cls: "VCE Chemistry U3&4", weeks: 10 }], targetBalance: 0, grant: 1 },
   { name: "孙悦", phone: "0401000010", admin: "amy", status: "subscribed",
-    enroll: [{ cls: "Y12 物理", weeks: 5 }], targetBalance: 10,
-    voucher: { kind: "RESCHEDULE", status: "REDEEMED", issuedDaysAgo: 2, redeemInto: "Y11 化学" } },
+    enroll: [{ cls: "VCE Chemistry U3&4", weeks: 5 }], targetBalance: 10,
+    voucher: { kind: "RESCHEDULE", status: "REDEEMED", issuedDaysAgo: 2, redeemInto: "VCE Maths Methods U1&2" } },
   { name: "林晨", phone: "0401000011", admin: "amy", status: "subscribed",
-    enroll: [{ cls: "Y10 数学B", weeks: 4 }, { cls: "Y12 物理", weeks: 4 }], targetBalance: 7 },
+    enroll: [{ cls: "VCE Chemistry U3&4", weeks: 4 }, { cls: "UCAT · Online", weeks: 4 }], targetBalance: 7 },
   { name: "何雨", phone: "0401000012", admin: "amy", status: "new" },
 ];
 
 const BEN: Spec[] = [
   { name: "冯乐天", phone: "0402000001", admin: "ben", status: "tried", statusChangedDaysAgo: 6,
-    voucher: { kind: "TRIAL", subject: "数学", status: "ATTENDED", issuedDaysAgo: 13, outcomeNote: "计算粗心，家长希望周末班" } },
+    voucher: { kind: "TRIAL", subject: "Maths", status: "ATTENDED", issuedDaysAgo: 13, outcomeNote: "计算粗心，家长希望周末班" } },
   { name: "顾小舟", phone: "0402000002", admin: "ben", status: "subscribed",
-    enroll: [{ cls: "Y10 数学A", weeks: 7 }], targetBalance: 11,
+    enroll: [{ cls: "VCE Maths Methods U1&2", weeks: 7 }], targetBalance: 11,
     voucher: { kind: "RESCHEDULE", status: "ISSUED", issuedDaysAgo: 1 } },
   { name: "韩梅", phone: "0402000003", admin: "ben", status: "subscribed",
-    enroll: [{ cls: "Y11 英语A", weeks: 9 }], targetBalance: 5 },
+    enroll: [{ cls: "VCE English/EAL U1&2", weeks: 9 }], targetBalance: 5 },
   { name: "曹阳", phone: "0402000004", admin: "ben", status: "ending", statusChangedDaysAgo: 6,
-    enroll: [{ cls: "Y12 物理", weeks: 9 }], targetBalance: 1 },
+    enroll: [{ cls: "VCE Chemistry U3&4", weeks: 9 }], targetBalance: 1 },
   { name: "许诺", phone: "0402000005", admin: "ben", status: "churning", statusChangedDaysAgo: 25,
-    enroll: [{ cls: "Y10 数学B", weeks: 10 }], targetBalance: 0 },
+    enroll: [{ cls: "Year 8 Maths", weeks: 10 }], targetBalance: 0 },
   { name: "石磊", phone: "0402000006", admin: "ben", status: "subscribed",
-    enroll: [{ cls: "Y11 化学", weeks: 6 }], targetBalance: 13 },
+    enroll: [{ cls: "VCE Chemistry U3&4", weeks: 6 }], targetBalance: 13 },
   { name: "唐诗", phone: "0402000007", admin: "ben", status: "subscribed",
-    enroll: [{ cls: "Y10 英语B", weeks: 5 }], targetBalance: 9 },
+    enroll: [{ cls: "Year 6 English & Writing", weeks: 5 }], targetBalance: 9 },
   { name: "秦朗", phone: "0402000008", admin: "ben", status: "new",
-    voucher: { kind: "TRIAL", subject: "英语", status: "ISSUED", issuedDaysAgo: 3, source: "转介绍" } },
+    voucher: { kind: "TRIAL", subject: "English", status: "ISSUED", issuedDaysAgo: 3, source: "转介绍" } },
   { name: "茜茜", phone: "0402000009", admin: "ben", status: "new",
-    voucher: { kind: "TRIAL", subject: "数学", status: "NOSHOW", issuedDaysAgo: 15, outcomeNote: "约了没来，可重发" } },
+    voucher: { kind: "TRIAL", subject: "Maths", status: "NOSHOW", issuedDaysAgo: 15, outcomeNote: "约了没来，可重发" } },
   { name: "高远", phone: "0402000010", admin: "ben", status: "subscribed",
-    enroll: [{ cls: "Y10 数学B", weeks: 8 }], targetBalance: 6 },
+    enroll: [{ cls: "Year 8 Maths", weeks: 8 }], targetBalance: 6 },
   { name: "罗盘", phone: "0402000011", admin: "ben", status: "new",
-    voucher: { kind: "TRIAL", subject: "数学", status: "EXPIRED", issuedDaysAgo: 40 } },
+    voucher: { kind: "TRIAL", subject: "Maths", status: "EXPIRED", issuedDaysAgo: 40 } },
   { name: "万绮雯", phone: "0402000012", admin: "ben", status: "subscribed",
-    enroll: [{ cls: "Y10 数学A", weeks: 5 }], targetBalance: 14 },
+    enroll: [{ cls: "VCE Maths Methods U1&2", weeks: 5 }], targetBalance: 14 },
 ];
 
 const CLASSES = [
-  { name: "Y10 数学A", subject: "数学", yearLevel: 10, teacher: "王老师", weekday: 3, startMin: 990, endMin: 1080, capacity: 12 }, // 周三 16:30-18:00
-  { name: "Y10 数学B", subject: "数学", yearLevel: 10, teacher: "王老师", weekday: 6, startMin: 840, endMin: 930, capacity: 12 },  // 周六 14:00-15:30
-  { name: "Y11 英语A", subject: "英语", yearLevel: 11, teacher: "李老师", weekday: 4, startMin: 990, endMin: 1110, capacity: 12 }, // 周四 16:30-18:30
-  { name: "Y12 物理", subject: "物理", yearLevel: 12, teacher: "陈老师", weekday: 6, startMin: 600, endMin: 720, capacity: 12 },   // 周六 10:00-12:00
-  { name: "Y10 英语B", subject: "英语", yearLevel: 10, teacher: "李老师", weekday: 7, startMin: 600, endMin: 720, capacity: 2 },   // 周日 10:00-12:00（满班演示）
-  { name: "Y11 化学", subject: "化学", yearLevel: 11, teacher: "刘老师", weekday: 6, startMin: 840, endMin: 960, capacity: 12 },   // 周六 14:00-16:00（与数学B重叠→R1 演示）
+  { name: "VCE Maths Methods U1&2", subject: "Maths Methods", yearLevel: 11, teacher: "王老师", weekday: 3, startMin: 990, endMin: 1080, capacity: 12 }, // 周三 16:30-18:00
+  { name: "Year 8 Maths", subject: "Maths", yearLevel: 8, teacher: "王老师", weekday: 6, startMin: 840, endMin: 930, capacity: 12 },   // 周六 14:00-15:30（与 Selective 重叠→R1 演示）
+  { name: "VCE English/EAL U1&2", subject: "English", yearLevel: 11, teacher: "李老师", weekday: 4, startMin: 990, endMin: 1110, capacity: 12 }, // 周四 16:30-18:30
+  { name: "VCE Chemistry U3&4", subject: "Chemistry", yearLevel: 12, teacher: "陈老师", weekday: 6, startMin: 600, endMin: 720, capacity: 12 },  // 周六 10:00-12:00
+  { name: "Year 6 English & Writing", subject: "English", yearLevel: 6, teacher: "李老师", weekday: 7, startMin: 600, endMin: 720, capacity: 2 }, // 周日 10:00-12:00（满班演示）
+  { name: "Selective Entry Program (Y8-9)", subject: "Selective", yearLevel: 9, teacher: "刘老师", weekday: 6, startMin: 840, endMin: 960, capacity: 12 }, // 周六 14:00-16:00（与 Year 8 Maths 重叠→R1 演示）
+  { name: "UCAT · Online", subject: "UCAT", yearLevel: 12, teacher: "陈老师", weekday: 5, startMin: 1020, endMin: 1140, capacity: 10 }, // 周五 17:00-19:00（站点口径：UCAT 纯线上）
 ];
 
 async function main() {

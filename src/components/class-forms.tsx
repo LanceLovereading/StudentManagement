@@ -24,7 +24,7 @@ function ClassFields({ teachers, subjects, initial }: {
   const fmt = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
   return (
     <>
-      <div className="field"><label>班级名</label><input name="name" className="input" required defaultValue={initial?.name} placeholder="Y10 数学C" /></div>
+      <div className="field"><label>班级名</label><input name="name" className="input" required defaultValue={initial?.name} placeholder="VCE Maths Methods U3&4" /></div>
       <div className="field">
         <label>科目</label>
         <input name="subject" className="input" required list="subject-list" defaultValue={initial?.subject} />

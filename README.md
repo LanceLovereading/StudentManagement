@@ -28,7 +28,7 @@ npm run dev         # http://localhost:3000
 ## 演示脚本（对应工作台三个数字）
 
 1. `admin` 登录 → 工作台：**待跟进 / 待续费 / 待唤醒** 三队列（种子已铺好：张小弟、冯乐天待跟进且超 48h 标超时；李小妹已跟进——弱化保留在队列，不消失；周天乐、吴优、曹阳待续费；郑安琪、许诺待唤醒）。
-2. 学生页录入新学生 → 发试听券 → 「去兑换」：逐班 **✓/✕ 预告**（王小宝的数学券：数学B 撞 Y11化学 → `R1_CONFLICT`；秦朗的英语券：英语B 满班 → `R7_FULL`）→ 兑换成功 → 标记出勤 → 工作台出现跟进项。
+2. 学生页录入新学生 → 发试听券 → 「去兑换」：逐班 **✓/✕ 预告**（王小宝的 Maths 券：Year 8 Maths 撞他在读的 Selective Entry Program → `R1_CONFLICT`；秦朗的 English 券：Year 6 English & Writing 满班 → `R7_FULL`）→ 兑换成功 → 标记出勤 → 工作台出现跟进项。
 3. 「起草跟进」：LLM 生成话术（可编辑、复制）；**LLM 不可用时降级为空白框，流程照常**。「标记已跟进」后条目不消失——近 7 天弱化保留（绿色徽章带时间），只剩「转化」按钮。转化：充值 + 排班同事务，学生变在读。
 4. 待续费学生：登记充值 → 余额 > 4 自动复活为在读（每日扫描驱动）。
 5. 教师登录（如刘老师 `0499000004`）：可上课时间按**具体日期**登记（同日重叠被拒）→ 点名/反馈操作台：在读与补课学生**出勤照扣**（郑安琪余额 0 会被单独指出——R4 不穿透且不影响他人），补课学生出勤后 RESCHEDULE 券变 USED，试听学生免费走券状态机。
@@ -72,9 +72,9 @@ curl -X POST :3000/api/vouchers/<id>/convert -d '{"hours":1,"classId":<id>}'  # 
 curl -X POST :3000/api/teacher/availability -d '{"date":"2026-10-07","startMin":900,"endMin":1020}' # 同日重叠 → 422 R12_OVERLAP；过去日期 → BAD_REQUEST
 # 同一订单重复「标记已收款」 → 422 ORDER_STATE（重放被守卫拒绝）
 # 余额为 0 的学生点名未到 → 该生 R4_OVERDRAFT，其余学生正常入账
-curl -X POST :3000/api/classes -d '{"name":"Y10 数学D",...,"startMin":1020,"endMin":1110}'  # 与数学A重叠 → 422 R2_TEACHER_CONFLICT
+curl -X POST :3000/api/classes -d '{"name":"VCE Specialist Maths U3&4",...,"weekday":3,"startMin":1020,"endMin":1110}'  # 与 Methods U1&2 同师同时 → 422 R2_TEACHER_CONFLICT
 curl -X POST :3000/api/classes -d '{"name":"Y10 数学E",...,"weekday":1,"startMin":600,"endMin":660}' # 教师周一无可用窗 → 422 R12_OUTSIDE_WINDOW（报缺窗日期）
-# 调班把数学B挪到与物理重叠 → 422 R1_CONFLICT（点名冲突的在读学生）；容量低于在读 → 422 R7_CAPACITY
+# 调班把 VCE Chemistry 挪到周五 UCAT 时段 → 422 R1_CONFLICT（林晨撞自己的 UCAT）；容量低于在读 → 422 R7_CAPACITY
 # 停开班后排班/兑换 → 422 CLASS_CLOSED
 ```
 
