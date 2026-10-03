@@ -118,17 +118,14 @@ async function main() {
   };
 
   const teachers: Record<string, number> = {};
-  for (const [name, phone, windows] of [
-    ["王老师", "0499000001", [[3, 840, 1200], [6, 540, 1140]]],
-    ["李老师", "0499000002", [[4, 840, 1200], [7, 540, 1140]]],
-    ["陈老师", "0499000003", [[6, 480, 900]]],
-    ["刘老师", "0499000004", [[6, 780, 1080]]],
-  ] as [string, string, [number, number, number][]][]) {
+  for (const [name, phone] of [
+    ["王老师", "0499000001"],
+    ["李老师", "0499000002"],
+    ["陈老师", "0499000003"],
+    ["刘老师", "0499000004"],
+  ] as [string, string][]) {
     const t = await db.teacher.create({ data: { name, phone, passwordHash: hash("teach123") } });
     teachers[name] = t.id;
-    for (const [weekday, startMin, endMin] of windows) {
-      await db.teacherTime.create({ data: { teacherId: t.id, weekday, startMin, endMin } });
-    }
   }
 
   const classes: Record<string, { id: number; weekday: number }> = {};
@@ -139,6 +136,17 @@ async function main() {
     classes[c.name] = { id: row.id, weekday: c.weekday };
     // 下一节：兑换预览与学生端"下节课"的容量分母
     await db.lesson.create({ data: { classId: row.id, date: nextOccurrence(c.weekday, today), status: "SCHEDULED" } });
+  }
+
+  // 教师可用时间 = 具体日期 + 时段（R12）：每个班未来 6 节的日期各登记一个覆盖窗
+  //（比班时前后各宽 60 分钟——真实档期比排课粗）。R12b 建班/调班校验未来 4 节，6 周留有余量。
+  for (const c of CLASSES) {
+    const first = nextOccurrence(c.weekday, today);
+    for (let i = 0; i < 6; i++) {
+      await db.teacherTime.create({
+        data: { teacherId: teachers[c.teacher], date: addDays(first, 7 * i), startMin: c.startMin - 60, endMin: c.endMin + 60 },
+      });
+    }
   }
 
   const bal = new Map<number, number>();

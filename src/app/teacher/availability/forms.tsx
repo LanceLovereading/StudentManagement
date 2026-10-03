@@ -4,14 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { post } from "@/lib/client";
 
-const WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
-
 function toMin(hhmm: string): number {
   const [h, m] = hhmm.split(":").map(Number);
   return h * 60 + m;
 }
 
-export function AddWindowForm() {
+export function AddWindowForm({ today }: { today: string }) {
   const router = useRouter();
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -25,7 +23,7 @@ export function AddWindowForm() {
         setErr("");
         try {
           await post("/api/teacher/availability", {
-            weekday: Number(f.get("weekday")),
+            date: String(f.get("date")),
             startMin: toMin(String(f.get("start"))),
             endMin: toMin(String(f.get("end"))),
           });
@@ -39,13 +37,11 @@ export function AddWindowForm() {
       }}
     >
       <div className="field">
-        <label>周几</label>
-        <select name="weekday" className="select">
-          {WEEKDAYS.map((w, i) => <option key={w} value={i + 1}>{w}</option>)}
-        </select>
+        <label>日期</label>
+        <input name="date" type="date" className="input" required min={today} defaultValue={today} />
       </div>
-      <div className="field"><label>开始</label><input name="start" type="time" className="input" required defaultValue="09:00" /></div>
-      <div className="field"><label>结束</label><input name="end" type="time" className="input" required defaultValue="12:00" /></div>
+      <div className="field"><label>开始</label><input name="start" type="time" className="input" required defaultValue="14:00" /></div>
+      <div className="field"><label>结束</label><input name="end" type="time" className="input" required defaultValue="18:00" /></div>
       <button className="btn btn-primary" disabled={busy}>登记可用时段</button>
       {err && <span className="err" style={{ margin: 0 }}>{err}</span>}
     </form>

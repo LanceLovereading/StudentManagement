@@ -70,16 +70,32 @@ export async function checkTeacherConflict(
   }
 }
 
-// R12b：班级时间必须完整落在该教师当天登记的某个可用窗内
+// R12b（单日原语）：指定日期的班级时间必须完整落在该教师当天登记的某个可用窗内。
+// 可用窗是"具体日期 + 时段"——班是周循环，两者靠展望期对齐。
 export async function checkWithinAvailability(
-  client: Db, teacherId: number, weekday: number, startMin: number, endMin: number
+  client: Db, teacherId: number, date: string, startMin: number, endMin: number
 ) {
-  const windows = await client.teacherTime.findMany({ where: { teacherId, weekday } });
+  const windows = await client.teacherTime.findMany({ where: { teacherId, date } });
   const inside = windows.some((w) => w.startMin <= startMin && endMin <= w.endMin);
-  if (!inside) throw new RuleError("R12_OUTSIDE_WINDOW", "班级时间未落在该教师当天登记的可用时段内");
+  if (!inside) {
+    throw new RuleError("R12_OUTSIDE_WINDOW", `${date} 该教师没有覆盖此时间的可用时段，需教师先登记`);
+  }
 }
 
-// 建班校验：时间合法 + R2 + R12b。编辑复用同一函数，excludeClassId 用于排除自身（否则调班会和自己撞车）。
+// R12b（建班/调班版）：校验未来 4 节（与 R7 容量同一展望期）的日期教师都有覆盖窗。
+// 缺哪天报哪天——教务拿着日期去找教师登记即可。
+async function checkAvailabilityHorizon(
+  client: Db,
+  input: { teacherId: number; weekday: number; startMin: number; endMin: number }
+) {
+  const today = melbourneToday();
+  const first = nextOccurrence(input.weekday, today);
+  for (let i = 0; i < 4; i++) {
+    await checkWithinAvailability(client, input.teacherId, addDays(first, 7 * i), input.startMin, input.endMin);
+  }
+}
+
+// 建班校验：时间合法 + R2 教师不撞班 + R12b 未来 4 节可用窗。
 export async function checkClassCreate(
   client: Db,
   input: { teacherId: number; weekday: number; startMin: number; endMin: number },
@@ -89,19 +105,26 @@ export async function checkClassCreate(
     throw new RuleError("BAD_TIME", "上课时间无效");
   }
   await checkTeacherConflict(client, input.teacherId, input.weekday, input.startMin, input.endMin, excludeClassId);
-  await checkWithinAvailability(client, input.teacherId, input.weekday, input.startMin, input.endMin);
+  await checkAvailabilityHorizon(client, input);
 }
 
-// 调班校验：建班的三条 + 改动时间后在读学生不得与其他班冲突（R1）+ 容量不得低于现有占用（R7 逆向）
+// 调班校验：R2 恒查；时间或教师变更才查 R12b（只改容量不必要求教师补登记未来档期）
+// + 改动时间后在读学生不得与其他班冲突（R1）+ 容量不得低于现有占用（R7 逆向）
 export async function checkClassEdit(
   client: Db,
   classId: number,
   next: { teacherId: number; weekday: number; startMin: number; endMin: number; capacity: number },
-  current: { weekday: number; startMin: number; endMin: number; capacity: number }
+  current: { teacherId: number; weekday: number; startMin: number; endMin: number; capacity: number }
 ) {
-  await checkClassCreate(client, next, classId);
-  const timeChanged = next.weekday !== current.weekday || next.startMin !== current.startMin || next.endMin !== current.endMin;
-  if (timeChanged) {
+  if (next.startMin < 0 || next.endMin > 1440 || next.startMin >= next.endMin) {
+    throw new RuleError("BAD_TIME", "上课时间无效");
+  }
+  await checkTeacherConflict(client, next.teacherId, next.weekday, next.startMin, next.endMin, classId);
+  const timeOrTeacherChanged =
+    next.weekday !== current.weekday || next.startMin !== current.startMin ||
+    next.endMin !== current.endMin || next.teacherId !== current.teacherId;
+  if (timeOrTeacherChanged) {
+    await checkAvailabilityHorizon(client, next);
     const roster = await client.studentTime.findMany({ where: { classId, status: "ACTIVE" }, select: { userId: true } });
     const rosterIds = roster.map((r) => r.userId);
     if (rosterIds.length > 0) {

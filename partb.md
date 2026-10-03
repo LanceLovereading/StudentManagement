@@ -13,7 +13,7 @@
 
 ## 6. 页面与信息结构
 
-Admin 5 个页面 + Teacher 1 个页面（我的可上课时间——兼职教师自助登记可用时段）。user 也能登录，落只读「我的课表」（下节课 / 还没上的课 / 新安排，学生侧零写入口 R5；家长门户"不做"）。第一屏 = 今天的欠账：
+Admin 5 个页面 + Teacher 1 个页面（我的可上课时间——兼职教师按**具体日期**自助登记可用时段）。user 也能登录，落只读「我的课表」（下节课 / 还没上的课 / 新安排，学生侧零写入口 R5；家长门户"不做"）。第一屏 = 今天的欠账：
 
 ```
 ┌───────────────────────────────────────────────────────────┐
@@ -71,7 +71,7 @@ Next.js（App Router）+ TypeScript 全栈；Prisma + SQLite（部署则换 Post
 
 ### 冲突检查（R1）怎么跑
 
-新 booking（class 的 weekday + start_min/end_min）与学生所有 `ACTIVE` 的 student_time → class 对比：同 weekday 且 `start_min < 对方.end_min AND end_min > 对方.start_min` → 拒绝，错误码返回重叠的那节课。券兑换（单节）同理：取该 lesson 的 weekday/时间对齐比较。教师侧：新班时间必须落在 teacher_time 的某可用窗内，且不与该教师其他班重叠。**全程 int 比较，无时区换算。**
+新 booking（class 的 weekday + start_min/end_min）与学生所有 `ACTIVE` 的 student_time → class 对比：同 weekday 且 `start_min < 对方.end_min AND end_min > 对方.start_min` → 拒绝，错误码返回重叠的那节课。券兑换（单节）同理：取该 lesson 的 weekday/时间对齐比较。教师侧：可用窗是**具体日期 + 时段**（teacher_time.date），建班/调班校验未来 4 节的日期逐日有覆盖窗，且不与该教师其他班重叠。**全程 int 比较，无时区换算。**
 
 ### 面试追问预演（每条都能落到表上）
 
@@ -79,7 +79,7 @@ Next.js（App Router）+ TypeScript 全栈；Prisma + SQLite（部署则换 Post
 - **"课时怎么退？"** — order 标 REFUNDED + caiwu 反向条目（REFUND, ref=order），不删不改任何历史
 - **"一个家长两个孩子 / 孩子有多位家长？"** — student_parent 多对多，is_primary 决定默认联系人
 - **"谁付的钱？"** — order.parent_id；上课的人和付钱的人从一开始就是两条记录
-- **"老师临时请假一周？"** — 该周 lesson 标 CANCELLED，不产生扣减；teacher_time 补不可用区间防再排
+- **"老师临时请假一周？"** — 该周 lesson 标 CANCELLED，不产生扣减；那一周不登记可用窗，就不会被再排
 - **"学生转给另一个 admin？"** — user.owner_admin_id 改外键 + 操作留痕；跟进中的券跟学生走
 - **"同一节课点了两次名？"** — caiwu unique(reason, user_id, ref_id)：第二次插入直接失败
 - **"学生缺勤了还扣吗？怎么补课？"** — 直接扣费并在出勤流水标 NOSHOW；admin 发 RESCHEDULE 补课券，兑换进任一有位课节，**补课出勤照常扣课时**（每一次实际授课都有成本）；是否另赠课时由 admin 用 GRANT 决定
@@ -97,12 +97,12 @@ Next.js（App Router）+ TypeScript 全栈；Prisma + SQLite（部署则换 Post
 | 模块 | 落点 | 规则 |
 |---|---|---|
 | 点名/反馈操作台（教师端） | `/teacher/lessons/[id]`；分发逻辑 `lib/rollcall.ts` | R4（幂等不穿透，逐生独立）、R11（照扣）、R14（事件迁移） |
-| 教师登录 + 可上课时间 | `/teacher/availability` | R12a 同师时段不重叠（int 比较） |
+| 教师登录 + 可上课时间 | `/teacher/availability`（按具体日期登记） | R12a 同师同日时段不重叠（int 比较） |
 | 补课券跨班兑换 | 兑换页接受 RESCHEDULE，跨科目选班 | R11（预约权非免扣）、R13、R1/R7 |
 | 赠送课时 | `/api/grant` → caiwu(+N, GRANT) | 与充值同源，对账统一 |
 | 订单收款 | order 表启用：CREATED→PAID 同事务入账，REFUNDED 反冲 | 幂等 ref=order:<id>；退款不删历史 |
 | 家长只读门户 | `/parent`，复用 `lib/view.ts` 课表视图 | 家长零写入口 |
-| 人工排课 | `/admin/classes` 周历视图（按天分道，撞时间的班并排）+ 建班；`/admin/classes/[id]` 调班/停开（仅 senior） | R2（教师不撞班，编辑时排除自身）、R12b（班时落在教师可用窗内）、调班改时间自动校验在读学生不撞班（R1）、容量不低于现有占用（R7 逆向）；停开班拒绝新排班/兑换 |
+| 人工排课 | `/admin/classes` 周历视图（按天分道，撞时间的班并排）+ 建班；`/admin/classes/[id]` 调班/停开（仅 senior） | R2（教师不撞班，编辑时排除自身）、R12b（未来 4 节逐日落在教师登记的具体日期可用窗内，缺哪天报哪天）、调班改时间自动校验在读学生不撞班（R1）、容量不低于现有占用（R7 逆向）；停开班拒绝新排班/兑换 |
 
 新增账本归属口径：caiwu.byAdminId / byTeacherId 恰好其一（admin 记账 vs 教师点名扣减）。
 点名分发是账本写入器的一处实现：在读学生与补课学生照扣（缺勤也照扣），试听学生免费走券状态机（出勤→ATTENDED/new→tried，缺席→NOSHOW 作废可重发）。

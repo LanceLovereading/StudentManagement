@@ -202,12 +202,14 @@ model OrderLesson {
   createdAt DateTime @default(now())
 }
 
-// 教师每周可用窗（兼职刚需）。v1 切片无教师页面，模型与 R12 校验就位
+// 教师可用时间 = 具体日期 + 时段（兼职教师的档期按天变动，不按周几循环）
 model TeacherTime {
   id        Int     @id @default(autoincrement())
   teacherId Int
   teacher   Teacher @relation(fields: [teacherId], references: [id])
-  weekday   Int
+  date      String // "YYYY-MM-DD"（Melbourne 本地）
   startMin  Int
   endMin    Int
+
+  @@index([teacherId, date])
 }

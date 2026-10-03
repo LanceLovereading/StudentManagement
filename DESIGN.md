@@ -70,7 +70,7 @@ Student(status: new→tried→subscribed→ending→churning)
 - `student_time(id, user_id, class_id, status, started_at)` — 报名；ACTIVE 唯一 (user, class)
 - `caiwu(id, user_id, delta, reason: PURCHASE|ATTENDANCE|GRANT|ADJUST|REFUND, status, ref, balance_after, by_admin_id, created_at)` — 唯一账本，部分唯一索引 (reason, user, ref)
 - `voucher(id, user_id, kind: TRIAL|GIFT_HOURS|DISCOUNT|RESCHEDULE, subject, status, valid_until, redeemed_lesson_id, source)` — 每学生同时仅一张未完结 TRIAL 券（部分唯一索引，不分科目）
-- `teacher_time(id, teacher_id, weekday, start_min, end_min)` — 兼职教师的每周可用窗
+- `teacher_time(id, teacher_id, date, start_min, end_min)` — 兼职教师的可用窗，**具体日期 + 时段**（档期按天变动，非周几循环）
 
 **四个关键设计：**
 
@@ -94,6 +94,6 @@ Student(status: new→tried→subscribed→ending→churning)
 | R9 | 券有效期：默认 30 天过期；过期由 admin 手动重发并留痕 | 服务端 | 内 |
 | R10 | 转化原子性：充值入账（v1 手工 caiwu；v2 起 order=PAID）与正式排班同事务完成；ref 唯一防重复入账，券状态守卫防重复转化 | 服务端事务 | 内 |
 | R11 | 补课：**出勤照扣课时**——补课班老师的工资不会少发，每一次实际授课都有成本；NOSHOW 也照扣（那节课老师已教）。RESCHEDULE 券不是免扣凭证，是 admin 发的**补课预约权**（客服/营销动作，允许跨班预约一节）；是否另行赠送课时由 admin 用 GRANT 自主决定 | 服务端事务 | 内 |
-| R12 | 教师可用窗：同一教师的可用时段不得互相重叠；班级时间必须落在某个可用窗内 | 服务端事务 | 内 |
+| R12 | 教师可用窗（具体日期 + 时段，非周几循环）：R12a 同一天不互相重叠；R12b 建班/调班校验未来 4 节（与 R7 同展望期）的日期均有覆盖窗 | 服务端事务 | 内 |
 | R13 | 预约物化：兑换/预约时目标 (class, date) 的 lesson 不存在 → 从 class 周循环现场创建，并写 order_lesson 关联 | 服务端事务 | 内 |
 | R14 | 学生状态迁移只由服务端驱动：事件迁移（录入/试听出勤/转化/账本写入重算）+ 每日扫描（跟进队列生成、churning 判定）；无手工改状态入口 | 服务端 | 内 |
