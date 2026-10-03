@@ -130,7 +130,11 @@ export default async function ClassesPage() {
           })}
         </div>
       </div>
-      {!isSenior && <p className="notice">你的权限只显示人数/容量，不显示名单、不可排课（R6）。</p>}
+      {!isSenior && (
+        <p className="notice">
+          给自己名下的学生排课在<Link href="/admin/students">学生页</Link>进行（添加课 / 兑换 / 转化，R6 读写自己学生）；建班、调班、停开与在读名单仅 senior。
+        </p>
+      )}
     </>
   );
 }
