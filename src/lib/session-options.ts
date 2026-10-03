@@ -12,7 +12,10 @@ export const sessionOptions = {
   cookieOptions: {
     httpOnly: true,
     sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
+    // Secure 不能跟 NODE_ENV 走：本地是明文 HTTP，Safari 严格拒绝保存 Secure cookie，
+    // 会话就永远立不住（Chrome/Firefox 对 localhost 网开一面，把这个差异藏住了）。
+    // 由部署地址推导：本地 HTTP 不带，HTTPS 部署（设 APP_URL 或跑在 Vercel）自动开启。
+    secure: process.env.APP_URL?.startsWith("https://") === true || process.env.VERCEL === "1",
     maxAge: 7 * 24 * 3600,
   },
 };

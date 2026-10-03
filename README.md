@@ -94,6 +94,7 @@ LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=...
 - SQLite + `prisma db push`；R8/报名 ACTIVE 唯一两个**部分唯一索引**在 seed 里以裸 SQL 建立（Prisma 不直接支持）。换 Postgres/Turso 时改 `provider` + `DATABASE_URL` 后用 `prisma migrate dev` 重建即可，索引会进迁移文件。
 - 订单（order 表，原 v2 设计）已提前启用：线下收款标记 PAID；接支付网关时挂回调即可，账本无需迁移。家长门户先于家长 CRM：只读，无站内信/通知。
 - 账本归属：caiwu.byAdminId / byTeacherId 恰好其一（admin 记账 vs 教师点名扣减），由调用方保证。
+- 会话 cookie 的 Secure 标志由部署地址推导（APP_URL / Vercel），不跟 NODE_ENV 走——踩过的坑：生产模式下 cookie 带 Secure、本地是明文 HTTP，Safari 严格拒收导致"登录成功却永远弹回登录页"，而 Chrome/Firefox 把 localhost 当可信上下文，把这个差异藏住了。
 - 每日扫描在工作台加载时幂等执行，未引入 cron 依赖；多实例部署时改为定时任务调用 `runDailyScan()`。
 - 兑换页预告与接口裁决共用 `checkSingleRedeem`——一份校验逻辑，没有第二套标准。
 - 出勤扣费（caiwu ATTENDANCE 写入）属点名模块（下阶段），账本结构已就位；种子里已有历史出勤流水供对账演示。
