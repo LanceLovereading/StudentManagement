@@ -73,7 +73,7 @@ export default async function Workbench() {
             </div>
             <div className="actions">
               <DraftBox userId={u.id} kind="renewal" label="起草续费" />
-              <Link className="btn btn-sm" href={`/admin/students/${u.id}#recharge`}>登记充值</Link>
+              <Link className="btn btn-sm" href={`/admin/students/${u.id}#orders`}>去收款</Link>
             </div>
           </div>
         ))}
@@ -90,7 +90,7 @@ export default async function Workbench() {
               <span className="sub">{u.phone}{showOwner ? ` · ${u.ownerAdmin.name}` : ""}</span>
             </div>
             <div className="actions">
-              <Link className="btn btn-sm" href={`/admin/students/${u.id}#recharge`}>登记充值</Link>
+              <Link className="btn btn-sm" href={`/admin/students/${u.id}#orders`}>去收款</Link>
             </div>
           </div>
         ))}

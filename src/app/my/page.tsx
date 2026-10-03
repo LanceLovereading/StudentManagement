@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
 import { getUserSession } from "@/lib/session";
-import { melbourneToday, nextOccurrence, addDays, weekdayName, fmtMin, fmtDate } from "@/lib/time";
+import { getStudentSchedule } from "@/lib/view";
+import { fmtDate } from "@/lib/time";
 import { LogoutButton } from "../admin/chrome";
 
 // 学生端：只读「我的课表」。三件事——下节课、还没上的课、新安排。
@@ -9,64 +9,9 @@ import { LogoutButton } from "../admin/chrome";
 export default async function MyPage() {
   const me = await getUserSession();
   if (!me) redirect("/login");
-  const user = await db.user.findUnique({
-    where: { id: me.id },
-    include: {
-      studentTimes: {
-        where: { status: "ACTIVE" },
-        include: { class: { include: { teacher: { select: { name: true } } } } },
-      },
-      caiwu: { orderBy: { id: "desc" }, take: 1 },
-      orderLessons: { include: { lesson: { include: { class: true } } } },
-    },
-  });
-  if (!user) redirect("/login");
-  const balance = user.caiwu[0]?.balanceAfter ?? 0;
-  const today = melbourneToday();
-  const weekAgo = new Date(Date.now() - 7 * 864e5);
-
-  const classIds = new Set(user.studentTimes.map((st) => st.classId));
-  // 已物化的未来课节（含被取消的——取消的那节要跳过）
-  const futureLessons = await db.lesson.findMany({
-    where: { classId: { in: [...classIds] }, date: { gte: today } },
-  });
-  const lessonAt = new Map(futureLessons.map((l) => [`${l.classId}@${l.date}`, l]));
-
-  type Item = { key: string; date: string; name: string; time: string; teacher: string; kind: "循环" | "单节"; isNew: boolean };
-  const items: Item[] = [];
-
-  // 循环班：接下来 3 个出现日期；被取消的那节顺延
-  for (const st of user.studentTimes) {
-    const first = nextOccurrence(st.class.weekday, today);
-    let shown = 0;
-    for (let i = 0; i < 8 && shown < 3; i++) {
-      const date = addDays(first, 7 * i);
-      const lesson = lessonAt.get(`${st.classId}@${date}`);
-      if (lesson?.status === "CANCELLED") continue;
-      items.push({
-        key: `c-${st.id}-${date}`, date, name: st.class.name,
-        time: `${fmtMin(st.class.startMin)}-${fmtMin(st.class.endMin)}`,
-        teacher: st.class.teacher.name, kind: "循环",
-        isNew: st.startedAt >= weekAgo && i === 0,
-      });
-      shown++;
-    }
-  }
-
-  // 单节占位（试听/补课）：不在已列循环里的才单列
-  for (const ol of user.orderLessons) {
-    if (ol.lesson.date < today || ol.lesson.status === "CANCELLED") continue;
-    if (classIds.has(ol.lesson.classId)) continue; // 循环班自身的占位由上一段表达
-    items.push({
-      key: `o-${ol.id}`, date: ol.lesson.date, name: `${ol.lesson.class.name}（单节）`,
-      time: `${fmtMin(ol.lesson.class.startMin)}-${fmtMin(ol.lesson.class.endMin)}`,
-      teacher: "", kind: "单节", isNew: ol.createdAt >= weekAgo,
-    });
-  }
-
-  items.sort((a, b) => a.date.localeCompare(b.date));
-  const upcoming = items.slice(0, 6);
-  const next = upcoming[0];
+  const view = await getStudentSchedule(me.id);
+  if (!view) redirect("/login");
+  const { user, balance, upcoming, next } = view;
 
   return (
     <>
@@ -106,7 +51,7 @@ export default async function MyPage() {
             <div className="label">接下来的安排</div>
           </div>
           <div className="stat">
-            <div className="num">{items.filter((i) => i.isNew).length}</div>
+            <div className="num">{upcoming.filter((i) => i.isNew).length}</div>
             <div className="label">新安排</div>
           </div>
         </div>

@@ -5,7 +5,10 @@ import { getAdminSession } from "@/lib/session";
 import { StatusBadge, VoucherBadge, fmtDateTime } from "@/components/badges";
 import FollowedButton from "@/components/FollowedButton";
 import { weekdayName, fmtMin } from "@/lib/time";
-import { IssueVoucherForm, RechargeForm, EnrollForm, ConvertForm, ResultButtons } from "@/components/student-forms";
+import {
+  IssueVoucherForm, EnrollForm, ConvertForm, ResultButtons,
+  MakeupVoucherForm, GrantForm, OrderForm, OrderActions, LinkParentForm,
+} from "@/components/student-forms";
 
 export default async function StudentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const admin = await getAdminSession();
@@ -19,6 +22,8 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
       vouchers: { orderBy: { id: "desc" } },
       caiwu: { orderBy: { id: "desc" } },
       orderLessons: { include: { lesson: { include: { class: { select: { name: true } } } } }, orderBy: { id: "desc" } },
+      orders: { orderBy: { id: "desc" } },
+      studentParents: { include: { parent: { select: { id: true, name: true, phone: true } } } },
     },
   });
   // R6：junior 越权即不可见
@@ -45,9 +50,32 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
         </section>
       )}
 
-      <section className="card" id="recharge">
-        <h2>充值 <span className="muted">v1 收款线下，admin 手工入账</span></h2>
-        <RechargeForm userId={user.id} />
+      <section className="card" id="orders">
+        <h2>订单收款 <span className="muted">收款线下；PAID 同事务入账，ref=order，一张订单只入账一次</span></h2>
+        <OrderForm userId={user.id} />
+        {user.orders.length > 0 && (
+          <table className="table" style={{ marginTop: 12 }}>
+            <thead><tr><th>#</th><th>课时</th><th>金额</th><th>状态</th><th>创建</th><th>入账</th><th></th></tr></thead>
+            <tbody>
+              {user.orders.map((o) => (
+                <tr key={o.id}>
+                  <td className="muted">{o.id}</td>
+                  <td>{o.hours} 课时</td>
+                  <td>¥{(o.amountCents / 100).toFixed(2)}</td>
+                  <td><span className={`badge ${o.status === "PAID" ? "ok" : o.status === "REFUNDED" ? "bad" : "gray"}`}>{o.status}</span></td>
+                  <td className="muted">{fmtDateTime(o.createdAt)}</td>
+                  <td className="muted">{o.paidAt ? fmtDateTime(o.paidAt) : "—"}</td>
+                  <td><OrderActions orderId={o.id} status={o.status} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      <section className="card">
+        <h2>赠送课时 <span className="muted">admin 自主动作（GRANT），与充值同源入账</span></h2>
+        <GrantForm userId={user.id} />
       </section>
 
       <section className="card">
@@ -74,23 +102,24 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
       </section>
 
       <section className="card">
-        <h2>试听券 <span className="muted">每学生同时仅一张未完结试听券（R8）</span></h2>
-        {user.vouchers.length === 0 && <p className="muted">还没有试听券。</p>}
+        <h2>试听券 / 补课券 <span className="muted">每学生同时仅一张未完结试听券（R8）</span></h2>
+        {user.vouchers.length === 0 && <p className="muted">还没有券。</p>}
         {user.vouchers.length > 0 && (
           <table className="table">
-            <thead><tr><th>#</th><th>科目</th><th>状态</th><th>有效期至</th><th>备注</th><th>操作</th></tr></thead>
+            <thead><tr><th>#</th><th>类型</th><th>科目</th><th>状态</th><th>有效期至</th><th>备注</th><th>操作</th></tr></thead>
             <tbody>
               {user.vouchers.map((v) => (
                 <tr key={v.id}>
                   <td className="muted">{v.id}</td>
-                  <td>{v.subject}</td>
+                  <td><span className={`badge ${v.kind === "TRIAL" ? "" : "warn"}`}>{v.kind === "TRIAL" ? "试听" : "补课"}</span></td>
+                  <td>{v.subject ?? "—"}</td>
                   <td><VoucherBadge status={v.status} /></td>
                   <td className="muted">{fmtDateTime(v.validUntil)}</td>
                   <td className="muted">{v.outcomeNote ?? ""}</td>
                   <td>
                     {v.status === "ISSUED" && <Link className="btn btn-sm btn-primary" href={`/admin/vouchers/${v.id}/redeem`}>去兑换</Link>}
-                    {v.status === "REDEEMED" && <ResultButtons voucherId={v.id} />}
-                    {v.status === "ATTENDED" && !v.followedUpAt && <FollowedButton voucherId={v.id} />}
+                    {v.kind === "TRIAL" && v.status === "REDEEMED" && <ResultButtons voucherId={v.id} />}
+                    {v.kind === "TRIAL" && v.status === "ATTENDED" && !v.followedUpAt && <FollowedButton voucherId={v.id} />}
                     {v.followedUpAt && <span className="badge ok">已跟进 {fmtDateTime(v.followedUpAt)}</span>}
                   </td>
                 </tr>
@@ -98,8 +127,11 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
             </tbody>
           </table>
         )}
-        <h3>发新试听券</h3>
+        <h3>发新券</h3>
         <IssueVoucherForm userId={user.id} subjects={subjects} />
+        <div style={{ marginTop: 10 }}>
+          <MakeupVoucherForm userId={user.id} />
+        </div>
       </section>
 
       {user.orderLessons.length > 0 && (
@@ -119,6 +151,26 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
           </table>
         </section>
       )}
+
+      <section className="card">
+        <h2>家长 <span className="muted">付款与沟通对象；家长可登录看只读课表</span></h2>
+        {user.studentParents.length === 0 && <p className="muted">尚未关联家长。</p>}
+        {user.studentParents.length > 0 && (
+          <table className="table">
+            <tbody>
+              {user.studentParents.map((sp) => (
+                <tr key={sp.id}>
+                  <td><strong>{sp.parent.name}</strong></td>
+                  <td className="muted">{sp.parent.phone}</td>
+                  <td><span className="badge">{sp.relation}</span>{sp.isPrimary && <span className="badge ok">主联系人</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <h3>关联家长</h3>
+        <LinkParentForm studentId={user.id} />
+      </section>
 
       <section className="card">
         <h2>课时账本 <span className="muted">每笔变动可逐笔回答"课时怎么少的"</span></h2>

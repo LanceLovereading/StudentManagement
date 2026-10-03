@@ -17,8 +17,8 @@ export default async function RedeemPage({ params }: { params: Promise<{ id: str
   const voucher = await assertVoucherVisible(admin, Number(id));
   const today = melbourneToday();
 
-  if (voucher.kind !== "TRIAL") {
-    return <Notice>仅试听券可兑换。<Link href="/admin/vouchers">返回</Link></Notice>;
+  if (voucher.kind !== "TRIAL" && voucher.kind !== "RESCHEDULE") {
+    return <Notice>仅试听券/补课券可兑换。<Link href="/admin/vouchers">返回</Link></Notice>;
   }
   if (voucher.status !== "ISSUED") {
     return <Notice>该券状态为「{voucher.status}」，无需兑换。<Link href="/admin/vouchers">返回</Link></Notice>;
@@ -28,7 +28,7 @@ export default async function RedeemPage({ params }: { params: Promise<{ id: str
   }
 
   const candidates = await db.class.findMany({
-    where: { subject: voucher.subject ?? "", status: "OPEN" },
+    where: { status: "OPEN", ...(voucher.kind === "TRIAL" ? { subject: voucher.subject ?? "" } : {}) },
     include: { teacher: { select: { name: true } } },
     orderBy: { id: "asc" },
   });
@@ -48,7 +48,7 @@ export default async function RedeemPage({ params }: { params: Promise<{ id: str
   return (
     <>
       <h1>
-        为 {voucher.user.name} 兑换 {voucher.subject} 试听{" "}
+        为 {voucher.user.name} 兑换 {voucher.kind === "TRIAL" ? `${voucher.subject} 试听` : "补课（跨班一节）"}{" "}
         <span className="muted" style={{ fontSize: 14 }}>有效期至 {fmtDateTime(voucher.validUntil)}</span>
       </h1>
       <div className="card">

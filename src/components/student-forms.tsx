@@ -51,7 +51,7 @@ export function IssueVoucherForm({ userId, subjects }: { userId: number; subject
         setBusy(true);
         setErr("");
         try {
-          await post("/api/vouchers", { userId, subject: f.get("subject") });
+          await post("/api/vouchers", { userId, kind: "TRIAL", subject: f.get("subject") });
           (e.target as HTMLFormElement).reset();
           router.refresh();
         } catch (ex) {
@@ -73,10 +73,36 @@ export function IssueVoucherForm({ userId, subjects }: { userId: number; subject
   );
 }
 
-export function RechargeForm({ userId }: { userId: number }) {
+export function MakeupVoucherForm({ userId }: { userId: number }) {
   const router = useRouter();
   const [err, setErr] = useState("");
-  const [ok, setOk] = useState("");
+  const [busy, setBusy] = useState(false);
+  return (
+    <form
+      className="inline-form"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        setErr("");
+        try {
+          await post("/api/vouchers", { userId, kind: "RESCHEDULE" });
+          router.refresh();
+        } catch (ex) {
+          setErr((ex as Error).message);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <button className="btn" disabled={busy}>发补课券（可跨班兑一节）</button>
+      {err && <span className="err" style={{ margin: 0 }}>{err}</span>}
+    </form>
+  );
+}
+
+export function GrantForm({ userId }: { userId: number }) {
+  const router = useRouter();
+  const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   return (
     <form
@@ -86,10 +112,8 @@ export function RechargeForm({ userId }: { userId: number }) {
         const f = new FormData(e.currentTarget);
         setBusy(true);
         setErr("");
-        setOk("");
         try {
-          const j = await post("/api/recharge", { userId, hours: Number(f.get("hours")) });
-          setOk(`已入账，余额 ${j.balanceAfter} 课时`);
+          await post("/api/grant", { userId, hours: Number(f.get("hours")) });
           (e.target as HTMLFormElement).reset();
           router.refresh();
         } catch (ex) {
@@ -99,10 +123,9 @@ export function RechargeForm({ userId }: { userId: number }) {
         }
       }}
     >
-      <div className="field"><label>充值课时（收款在线下）</label><input name="hours" type="number" min={1} className="input" required /></div>
-      <button className="btn btn-primary" disabled={busy}>登记充值</button>
+      <div className="field"><label>赠送课时</label><input name="hours" type="number" min={1} className="input" required /></div>
+      <button className="btn" disabled={busy}>赠送（GRANT）</button>
       {err && <span className="err" style={{ margin: 0 }}>{err}</span>}
-      {ok && <span className="badge ok">{ok}</span>}
     </form>
   );
 }
@@ -195,5 +218,100 @@ export function ResultButtons({ voucherId }: { voucherId: number }) {
       <button className="btn btn-sm btn-danger" onClick={() => mark("NOSHOW")}>标记缺勤</button>
       {err && <span className="muted" style={{ fontSize: 12 }}> {err}</span>}
     </span>
+  );
+}
+
+export function OrderForm({ userId }: { userId: number }) {
+  const router = useRouter();
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  return (
+    <form
+      className="inline-form"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.currentTarget);
+        setBusy(true);
+        setErr("");
+        try {
+          await post("/api/orders", { userId, hours: Number(f.get("hours")), amountYuan: Number(f.get("amount")) });
+          (e.target as HTMLFormElement).reset();
+          router.refresh();
+        } catch (ex) {
+          setErr((ex as Error).message);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <div className="field"><label>课时</label><input name="hours" type="number" min={1} className="input" required /></div>
+      <div className="field"><label>金额（¥，线下收款）</label><input name="amount" type="number" min={1} step="0.01" className="input" required /></div>
+      <button className="btn btn-primary" disabled={busy}>创建订单</button>
+      {err && <span className="err" style={{ margin: 0 }}>{err}</span>}
+    </form>
+  );
+}
+
+export function OrderActions({ orderId, status }: { orderId: number; status: string }) {
+  const router = useRouter();
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function act(kind: "pay" | "refund") {
+    setBusy(true);
+    setErr("");
+    try {
+      await post(`/api/orders/${orderId}/${kind}`);
+      router.refresh();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <span>
+      {status === "CREATED" && <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => act("pay")}>标记已收款</button>}
+      {status === "PAID" && <button className="btn btn-sm btn-danger" disabled={busy} onClick={() => act("refund")}>退款</button>}
+      {err && <span className="muted" style={{ fontSize: 12 }}> {err}</span>}
+    </span>
+  );
+}
+
+export function LinkParentForm({ studentId }: { studentId: number }) {
+  const router = useRouter();
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  return (
+    <form
+      className="inline-form"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.currentTarget);
+        setBusy(true);
+        setErr("");
+        try {
+          await post("/api/parents", { studentId, phone: f.get("phone"), name: f.get("name") || undefined, relation: f.get("relation") });
+          (e.target as HTMLFormElement).reset();
+          router.refresh();
+        } catch (ex) {
+          setErr((ex as Error).message);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <div className="field"><label>家长姓名</label><input name="name" className="input" placeholder="新家长必填" /></div>
+      <div className="field"><label>手机号（家长登录用）</label><input name="phone" className="input" required placeholder="139xxxxxxxx" /></div>
+      <div className="field">
+        <label>关系</label>
+        <select name="relation" className="select">
+          <option value="MOTHER">母亲</option>
+          <option value="FATHER">父亲</option>
+          <option value="OTHER">其他</option>
+        </select>
+      </div>
+      <button className="btn" disabled={busy}>关联家长</button>
+      {err && <span className="err" style={{ margin: 0 }}>{err}</span>}
+    </form>
   );
 }
