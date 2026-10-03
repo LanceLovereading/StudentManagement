@@ -18,10 +18,10 @@ export default async function RedeemPage({ params }: { params: Promise<{ id: str
   const today = melbourneToday();
 
   if (voucher.kind !== "TRIAL" && voucher.kind !== "RESCHEDULE") {
-    return <Notice>仅试听券/补课券可兑换。<Link href="/admin/vouchers">返回</Link></Notice>;
+    return <Notice>仅试听券/补课券可兑换。<Link href={`/admin/students/${voucher.userId}`}>返回学生页</Link></Notice>;
   }
   if (voucher.status !== "ISSUED") {
-    return <Notice>该券状态为「{voucher.status}」，无需兑换。<Link href="/admin/vouchers">返回</Link></Notice>;
+    return <Notice>该券状态为「{voucher.status}」，无需兑换。<Link href={`/admin/students/${voucher.userId}`}>返回学生页</Link></Notice>;
   }
   if (voucher.validUntil.getTime() < Date.now()) {
     return <Notice>该券已于 {fmtDateTime(voucher.validUntil)} 过期（R9）——由 admin 重发并留痕。<Link href={`/admin/students/${voucher.userId}`}>返回学生页</Link></Notice>;

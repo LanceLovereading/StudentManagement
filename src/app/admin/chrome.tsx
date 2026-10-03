@@ -7,7 +7,6 @@ const ITEMS = [
   ["/admin", "工作台"],
   ["/admin/students", "学生"],
   ["/admin/classes", "排班表"],
-  ["/admin/vouchers", "试听券"],
 ] as const;
 
 export function AdminNav() {
