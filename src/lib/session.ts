@@ -1,30 +1,18 @@
-import { getIronSession, IronSession, SessionOptions } from "iron-session";
+import { getIronSession, IronSession } from "iron-session";
 import { cookies } from "next/headers";
+import { db } from "./db";
+import { RuleError } from "./errors";
+import { sessionOptions, type SessionData } from "./session-options";
 
-export type SessionData = {
-  role?: "admin" | "user";
-  id?: number;
-  name?: string;
-  level?: "SENIOR" | "JUNIOR";
-};
+export { sessionOptions };
+export type { SessionData };
 
-export const sessionOptions: SessionOptions = {
-  password: process.env.SESSION_SECRET ?? "dev-only-secret-0123456789abcdef0123456789",
-  cookieName: "austin-sms",
-  cookieOptions: {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    maxAge: 7 * 24 * 3600,
-  },
-};
+export type AdminSession = { id: number; name: string; level: "SENIOR" | "JUNIOR" };
+export type UserSession = { id: number; name: string };
 
 export async function getSession(): Promise<IronSession<SessionData>> {
   return getIronSession<SessionData>(await cookies(), sessionOptions);
 }
-
-export type AdminSession = { id: number; name: string; level: "SENIOR" | "JUNIOR" };
-export type UserSession = { id: number; name: string };
 
 export async function getAdminSession(): Promise<AdminSession | null> {
   const s = await getSession();
@@ -41,4 +29,21 @@ export async function getUserSession(): Promise<UserSession | null> {
 // R6：junior 只能触碰自己名下的学生。所有学生查询/写入都过这个 where。
 export function studentScope(admin: AdminSession): { ownerAdminId?: number } {
   return admin.level === "SENIOR" ? {} : { ownerAdminId: admin.id };
+}
+
+// R6（写路径版）：学生不可见 → NOT_FOUND；junior 越权 → FORBIDDEN
+export async function assertStudentVisible(admin: AdminSession, userId: number) {
+  const u = await db.user.findUnique({ where: { id: userId }, select: { ownerAdminId: true } });
+  if (!u) throw new RuleError("NOT_FOUND", "学生不存在");
+  if (admin.level !== "SENIOR" && u.ownerAdminId !== admin.id) throw new Error("FORBIDDEN");
+}
+
+export async function assertVoucherVisible(admin: AdminSession, voucherId: number) {
+  const v = await db.voucher.findUnique({
+    where: { id: voucherId },
+    include: { user: { select: { id: true, ownerAdminId: true, status: true, name: true } } },
+  });
+  if (!v) throw new RuleError("NOT_FOUND", "券不存在");
+  if (admin.level !== "SENIOR" && v.user.ownerAdminId !== admin.id) throw new Error("FORBIDDEN");
+  return v;
 }
