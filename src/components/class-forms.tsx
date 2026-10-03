@@ -11,14 +11,20 @@ function toMin(hhmm: string): number {
   return h * 60 + m;
 }
 
+function fmtMin(min: number): string {
+  return `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
+}
+
 type TeacherOption = { id: number; name: string };
 
-function ClassFields({ teachers, subjects, initial }: {
+function ClassFields({ teachers, subjects, initial, today }: {
   teachers: TeacherOption[];
   subjects: string[];
+  today?: string;
   initial?: {
     name: string; subject: string; yearLevel: number; teacherId: number;
     weekday: number; startMin: number; endMin: number; capacity: number;
+    startDate: string; endDate: string;
   };
 }) {
   const fmt = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
@@ -53,11 +59,13 @@ function ClassFields({ teachers, subjects, initial }: {
       <div className="field"><label>开始</label><input name="start" type="time" className="input" required defaultValue={initial ? fmt(initial.startMin) : "16:30"} /></div>
       <div className="field"><label>结束</label><input name="end" type="time" className="input" required defaultValue={initial ? fmt(initial.endMin) : "18:00"} /></div>
       <div className="field"><label>容量</label><input name="capacity" type="number" min={1} className="input" required defaultValue={initial?.capacity ?? 12} /></div>
+      <div className="field"><label>学期开始</label><input name="startDate" type="date" className="input" required defaultValue={initial?.startDate ?? today} min={today} /></div>
+      <div className="field"><label>学期结束</label><input name="endDate" type="date" className="input" required defaultValue={initial?.endDate} /></div>
     </>
   );
 }
 
-export function CreateClassForm({ teachers, subjects }: { teachers: TeacherOption[]; subjects: string[] }) {
+export function CreateClassForm({ teachers, subjects, today }: { teachers: TeacherOption[]; subjects: string[]; today: string }) {
   const router = useRouter();
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -75,6 +83,7 @@ export function CreateClassForm({ teachers, subjects }: { teachers: TeacherOptio
             teacherId: Number(f.get("teacherId")), weekday: Number(f.get("weekday")),
             startMin: toMin(String(f.get("start"))), endMin: toMin(String(f.get("end"))),
             capacity: Number(f.get("capacity")),
+            startDate: String(f.get("startDate")), endDate: String(f.get("endDate")),
           });
           (e.target as HTMLFormElement).reset();
           router.refresh();
@@ -85,9 +94,9 @@ export function CreateClassForm({ teachers, subjects }: { teachers: TeacherOptio
         }
       }}
     >
-      <ClassFields teachers={teachers} subjects={subjects} />
+      <ClassFields teachers={teachers} subjects={subjects} today={today} />
       <div style={{ width: "100%" }}>
-        <button className="btn btn-primary" disabled={busy}>建班（R2 教师不撞班 · R12b 落在可用窗内）</button>
+        <button className="btn btn-primary" disabled={busy}>建班（R2 教师不撞班 · R12b 学期内有可用窗）</button>
         {err && <span className="err" style={{ margin: 0 }}> {err}</span>}
       </div>
     </form>
@@ -98,7 +107,7 @@ export function EditClassForm({ classId, teachers, subjects, initial }: {
   classId: number;
   teachers: TeacherOption[];
   subjects: string[];
-  initial: { name: string; subject: string; yearLevel: number; teacherId: number; weekday: number; startMin: number; endMin: number; capacity: number };
+  initial: { name: string; subject: string; yearLevel: number; teacherId: number; weekday: number; startMin: number; endMin: number; capacity: number; startDate: string; endDate: string };
 }) {
   const router = useRouter();
   const [err, setErr] = useState("");
@@ -117,6 +126,7 @@ export function EditClassForm({ classId, teachers, subjects, initial }: {
             teacherId: Number(f.get("teacherId")), weekday: Number(f.get("weekday")),
             startMin: toMin(String(f.get("start"))), endMin: toMin(String(f.get("end"))),
             capacity: Number(f.get("capacity")),
+            startDate: String(f.get("startDate")), endDate: String(f.get("endDate")),
           });
           router.refresh();
         } catch (ex) {
@@ -132,6 +142,112 @@ export function EditClassForm({ classId, teachers, subjects, initial }: {
         {err && <span className="err" style={{ margin: 0 }}> {err}</span>}
       </div>
     </form>
+  );
+}
+
+// 从模板开班：选模板 + 学期起止日期 → 新 Class。模板只存课程骨架，不带日期。
+export function InstantiateTemplateForm({ templates, today, defaultEnd }: {
+  templates: { id: number; name: string; teacher: { name: string }; weekday: number; startMin: number; endMin: number }[];
+  today: string;
+  defaultEnd: string;
+}) {
+  const router = useRouter();
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [ok, setOk] = useState("");
+  return (
+    <form
+      className="inline-form"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.currentTarget);
+        setBusy(true);
+        setErr("");
+        setOk("");
+        try {
+          await post("/api/classes", {
+            templateId: Number(f.get("templateId")),
+            startDate: String(f.get("startDate")),
+            endDate: String(f.get("endDate")),
+          });
+          (e.target as HTMLFormElement).reset();
+          setOk("已开班");
+          router.refresh();
+        } catch (ex) {
+          setErr((ex as Error).message);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <div className="field" style={{ minWidth: 260 }}>
+        <label>模板</label>
+        <select name="templateId" className="select" required>
+          {templates.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name} · {WEEKDAYS[t.weekday - 1]} {fmtMin(t.startMin)}-{fmtMin(t.endMin)} · {t.teacher.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="field"><label>学期开始</label><input name="startDate" type="date" className="input" required defaultValue={today} min={today} /></div>
+      <div className="field"><label>学期结束</label><input name="endDate" type="date" className="input" required defaultValue={defaultEnd} /></div>
+      <button className="btn btn-primary" disabled={busy}>按模板开班</button>
+      {ok && <span className="muted" style={{ fontSize: 13 }}>{ok}</span>}
+      {err && <span className="err" style={{ margin: 0 }}>{err}</span>}
+    </form>
+  );
+}
+
+export function DeleteTemplateButton({ id }: { id: number }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      className="btn btn-sm btn-danger"
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          await post("/api/class-templates/delete", { id });
+          router.refresh();
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      删除
+    </button>
+  );
+}
+
+// 把现有班沉淀为模板（复制课程骨架，不带学期日期），下学期一键开班。
+export function SaveAsTemplateButton({ classId }: { classId: number }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  return (
+    <span>
+      <button
+        className="btn btn-sm"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          setErr("");
+          try {
+            await post("/api/class-templates", { classId });
+            router.refresh();
+          } catch (e) {
+            setErr((e as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        存为模板
+      </button>
+      {err && <span className="muted" style={{ fontSize: 12 }}> {err}</span>}
+    </span>
   );
 }
 

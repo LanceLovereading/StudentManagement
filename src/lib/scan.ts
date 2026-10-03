@@ -15,10 +15,12 @@ export async function runDailyScan() {
   });
 
   // 物化各班下一节（"查看时补建"的兜底）：教师点名页/兑换预览/学生端都有稳定可链接的课节
-  const openClasses = await db.class.findMany({ where: { status: "OPEN" }, select: { id: true, weekday: true } });
+  // 学期结束的班不再物化——lesson 只存在于 [startDate, endDate] 内
+  const openClasses = await db.class.findMany({ where: { status: "OPEN" }, select: { id: true, weekday: true, endDate: true } });
   const today = melbourneToday();
   for (const c of openClasses) {
     const date = nextOccurrence(c.weekday, today);
+    if (date > c.endDate) continue;
     await db.lesson.upsert({
       where: { classId_date: { classId: c.id, date } },
       create: { classId: c.id, date, status: "SCHEDULED" },

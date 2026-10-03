@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { melbourneToday, nextOccurrence, addDays } from "./time";
+import { melbourneToday, upcomingOccurrences } from "./time";
 
 // 学生课表视图：/my（学生本人）、/parent（家长看孩子）共用一份查询逻辑。
 export type ScheduleItem = {
@@ -37,19 +37,19 @@ export async function getStudentSchedule(userId: number) {
   const lessonAt = new Map(futureLessons.map((l) => [`${l.classId}@${l.date}`, l]));
 
   const items: ScheduleItem[] = [];
-  // 循环班：接下来 3 个出现日期；被取消的那节顺延
+  // 循环班：学期内接下来 3 个出现日期（不早于学期开始、不越过学期结束）；被取消的那节顺延
   for (const st of user.studentTimes) {
-    const first = nextOccurrence(st.class.weekday, today);
+    const dates = upcomingOccurrences(st.class.weekday, st.class.startDate, st.class.endDate, today, 8);
     let shown = 0;
-    for (let i = 0; i < 8 && shown < 3; i++) {
-      const date = addDays(first, 7 * i);
+    for (const date of dates) {
+      if (shown >= 3) break;
       const lesson = lessonAt.get(`${st.classId}@${date}`);
       if (lesson?.status === "CANCELLED") continue;
       items.push({
         key: `c-${st.id}-${date}`, date, name: st.class.name,
         time: `${String(Math.floor(st.class.startMin / 60)).padStart(2, "0")}:${String(st.class.startMin % 60).padStart(2, "0")}-${String(Math.floor(st.class.endMin / 60)).padStart(2, "0")}:${String(st.class.endMin % 60).padStart(2, "0")}`,
         teacher: st.class.teacher.name, kind: "循环",
-        isNew: st.startedAt >= weekAgo && i === 0,
+        isNew: st.startedAt >= weekAgo && shown === 0,
       });
       shown++;
     }

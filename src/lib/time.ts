@@ -30,6 +30,19 @@ export function nextOccurrence(weekday: number, from: string): string {
   return addDays(from, diff);
 }
 
+// 学期内的前 limit 个上课日期：从 from 起算，但不早于学期开始、不越过学期结束。
+// 班是周循环、学期是有界区间——所有"未来 4 节"式校验都从这里取日期。
+export function upcomingOccurrences(weekday: number, startDate: string, endDate: string, from: string, limit: number): string[] {
+  let d = nextOccurrence(weekday, from);
+  if (d < startDate) d = nextOccurrence(weekday, startDate);
+  const out: string[] = [];
+  while (out.length < limit && d <= endDate) {
+    out.push(d);
+    d = addDays(d, 7);
+  }
+  return out;
+}
+
 export function weekdayName(w: number): string {
   return ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"][w];
 }

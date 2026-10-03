@@ -2,8 +2,8 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { getAdminSession } from "@/lib/session";
-import { melbourneToday, nextOccurrence, weekdayOf, weekdayName, fmtMin } from "@/lib/time";
-import { CreateClassForm } from "@/components/class-forms";
+import { melbourneToday, nextOccurrence, weekdayOf, weekdayName, fmtMin, addDays } from "@/lib/time";
+import { CreateClassForm, InstantiateTemplateForm, DeleteTemplateButton } from "@/components/class-forms";
 
 // 排班表 = 周历。固定班是周循环，一屏回答"谁、哪天几点、在谁手上、还有没有位"。
 // 块上人数是周循环事实（在读/容量）；单节余位（含试听占位）在兑换预告与班级详情里看。
@@ -60,6 +60,9 @@ export default async function ClassesPage() {
   });
   const subjects = [...new Set(classes.map((c) => c.subject))];
   const teachers = await db.teacher.findMany({ select: { id: true, name: true }, orderBy: { id: "asc" } });
+  const templates = isSenior
+    ? await db.classTemplate.findMany({ include: { teacher: { select: { name: true } } }, orderBy: { id: "asc" } })
+    : [];
 
   const byDay = new Map<number, typeof classes>();
   for (const c of classes) byDay.set(c.weekday, [...(byDay.get(c.weekday) ?? []), c]);
@@ -73,8 +76,30 @@ export default async function ClassesPage() {
 
       {isSenior && (
         <div className="card">
-          <h2>建班 <span className="muted">服务端强制：R2 教师不撞班 · R12b 班时落在教师可用窗内</span></h2>
-          <CreateClassForm teachers={teachers} subjects={subjects} />
+          <h2>建班 <span className="muted">服务端强制：R2 教师不撞班 · R12b 学期内未来 4 节教师有可用窗</span></h2>
+          <CreateClassForm teachers={teachers} subjects={subjects} today={today} />
+        </div>
+      )}
+
+      {isSenior && templates.length > 0 && (
+        <div className="card">
+          <h2>从模板开班 <span className="muted">模板只存课程骨架；新学期 = 模板 + 学期起止日期，历史班与名单不受影响</span></h2>
+          <InstantiateTemplateForm
+            templates={templates.map((t) => ({ id: t.id, name: t.name, teacher: { name: t.teacher.name }, weekday: t.weekday, startMin: t.startMin, endMin: t.endMin }))}
+            today={today}
+            defaultEnd={addDays(today, 70)}
+          />
+          <table className="table" style={{ marginTop: 8 }}>
+            <tbody>
+              {templates.map((t) => (
+                <tr key={t.id}>
+                  <td><strong>{t.name}</strong> <span className="muted">({t.subject} Y{t.yearLevel})</span></td>
+                  <td className="muted">{weekdayName(t.weekday)} {fmtMin(t.startMin)}-{fmtMin(t.endMin)} · {t.teacher.name} · 容量 {t.capacity}</td>
+                  <td style={{ textAlign: "right" }}><DeleteTemplateButton id={t.id} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 

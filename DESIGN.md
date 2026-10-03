@@ -63,7 +63,8 @@ Student(status: new→tried→subscribed→ending→churning)
 - `parent(id, name, phone, password_hash)` — 家长 **〔v2〕**
 - `student_parent(student_id, parent_id, relation, is_primary)` — 多对多 **〔v2〕**
 - `admin(id, name, password_hash, level: SENIOR|JUNIOR)` — 教务两级权限 / `teacher(id, name, phone, password_hash)` — 教师（兼职），全员登录
-- `class(id, name, subject, year_level, teacher_id, weekday, start_min, end_min, capacity=12)` — 每周循环的固定班
+- `class(id, name, subject, year_level, teacher_id, weekday, start_min, end_min, start_date, end_date, capacity=12)` — 固定班 = **学期内的每周循环**（一班一周一节），lesson 只在 [start_date, end_date] 内物化；学期结束后的排班/兑换/点名入口自然关闭
+- `class_template(id, name, subject, year_level, teacher_id, weekday, start_min, end_min, capacity)` — 课程骨架（无日期无名单）；新学期开班 = 模板 + 学期起止日期，也可从任一现有班「存为模板」
 - `lesson(id, class_id, date, status)` — 按周循环、预约时按需生成的单节实例
 - `order(id, user_id, parent_id, subject, hours, amount_cents, status, voucher_id, paid_at, created_by_admin_id)` — 购买记录 **〔v2〕**
 - `order_lesson(id, lesson_id, student_id, order_id?, voucher_id?)` — 预约关联表：券/订单占了哪节课；目标 lesson 不存在则现场物化（v1 仅有券侧数据，order 侧 v2 启用）

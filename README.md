@@ -53,7 +53,9 @@ npm run dev         # http://localhost:3000
 | R12 教师可用窗 | `/api/teacher/availability`（R12a 同师不重叠）；班级须落在窗内（R12b）在建班侧强制，本切片无建班入口 |
 | R4 点名幂等 | `lib/rollcall.ts` + caiwu unique(reason,user,ref)；逐生独立，R4_OVERDRAFT 不影响他人 |
 | R2 教师不撞班 | `lib/rules.ts` `checkTeacherConflict`（建班/调班，编辑排除自身） |
-| R12b 班时在窗内 | `checkWithinAvailability`：可用窗是**具体日期 + 时段**（非周几循环）；建班/调班校验未来 4 节（与 R7 同展望期）逐日有覆盖窗，缺哪天报哪天 |
+| R12b 班时在窗内 | `checkWithinAvailability`：可用窗是**具体日期 + 时段**（非周几循环）；建班/调班校验学期内未来 4 节（与 R7 同展望期）逐日有覆盖窗，缺哪天报哪天 |
+| 学期边界 | `upcomingOccurrences`：班是周循环、学期是有界区间——R7 容量展望 / R12b 可用窗展望 / 学生课表 / lesson 物化全部截在 `[startDate, endDate]` 内；学期已尽 → `CLASS_ENDED`（等新学期开班） |
+| 模板开班 | `ClassTemplate` 只存课程骨架；`POST /api/classes` 带 `templateId` + 学期日期 = 新学期开班；详情页「存为模板」沉淀骨架 |
 | 调班影响面 | `checkClassEdit`：改时间自动校验在读学生不撞班（R1）；容量不得低于在读人数与未来课节占用 |
 | R14 状态机只由服务端驱动 | `ledger.ts` `recomputeLifecycle` + `scan.ts` `runDailyScan`（工作台加载时幂等执行；生产换 cron 调同一函数） |
 
@@ -72,9 +74,11 @@ curl -X POST :3000/api/vouchers/<id>/convert -d '{"hours":1,"classId":<id>}'  # 
 curl -X POST :3000/api/teacher/availability -d '{"date":"2026-10-07","startMin":900,"endMin":1020}' # 同日重叠 → 422 R12_OVERLAP；过去日期 → BAD_REQUEST
 # 同一订单重复「标记已收款」 → 422 ORDER_STATE（重放被守卫拒绝）
 # 余额为 0 的学生点名未到 → 该生 R4_OVERDRAFT，其余学生正常入账
-curl -X POST :3000/api/classes -d '{"name":"VCE Specialist Maths U3&4",...,"weekday":3,"startMin":1020,"endMin":1110}'  # 与 Methods U1&2 同师同时 → 422 R2_TEACHER_CONFLICT
-curl -X POST :3000/api/classes -d '{"name":"Y10 数学E",...,"weekday":1,"startMin":600,"endMin":660}' # 教师周一无可用窗 → 422 R12_OUTSIDE_WINDOW（报缺窗日期）
+curl -X POST :3000/api/classes -d '{"name":"VCE Specialist Maths U3&4",...,"weekday":3,"startMin":1020,"endMin":1110,"startDate":"...","endDate":"..."}'  # 与 Methods U1&2 同师同时 → 422 R2_TEACHER_CONFLICT
+curl -X POST :3000/api/classes -d '{"name":"Y10 数学E",...,"weekday":1,"startMin":600,"endMin":660,"startDate":"...","endDate":"..."}' # 教师周一无可用窗 → 422 R12_OUTSIDE_WINDOW（报缺窗日期）
+curl -X POST :3000/api/classes -d '{"templateId":<id>,"startDate":"...","endDate":"..."}'  # 从模板开班；缺日期 → BAD_REQUEST，结束在过去 → BAD_TIME
 # 调班把 VCE Chemistry 挪到周五 UCAT 时段 → 422 R1_CONFLICT（林晨撞自己的 UCAT）；容量低于在读 → 422 R7_CAPACITY
+# 学期结束日改到过去后，排课/兑换该班 → 422 CLASS_ENDED（等新学期从模板开班）
 # 停开班后排班/兑换 → 422 CLASS_CLOSED
 ```
 

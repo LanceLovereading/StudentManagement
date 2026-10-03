@@ -1,7 +1,7 @@
 import type { Prisma, Class } from "@prisma/client";
 import { db } from "./db";
 import { RuleError } from "./errors";
-import { addDays, melbourneToday, nextOccurrence } from "./time";
+import { melbourneToday, upcomingOccurrences } from "./time";
 import { ENDING_THRESHOLD, getBalance, type Db } from "./ledger";
 
 export function overlaps(aS: number, aE: number, bS: number, bE: number) {
@@ -47,9 +47,19 @@ export async function lessonOccupancy(client: Db, classId: number, date: string)
   return { roster, visitors, total: roster + visitors };
 }
 
-// 单节预约（券兑换）的完整校验：班级停开 + R1 + R7。被兑换页预告与兑换接口共用——预告即裁决逻辑。
+// 日期字段统一校验（Class.startDate/endDate，"YYYY-MM-DD"）
+export function validateTermDates(startDate: string, endDate: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+    throw new RuleError("BAD_TIME", "学期日期无效");
+  }
+  if (startDate > endDate) throw new RuleError("BAD_TIME", "学期开始不能晚于结束");
+}
+
+// 单节预约（券兑换）的完整校验：班级停开/学期已过 + R1 + R7。被兑换页预告与兑换接口共用——预告即裁决逻辑。
 export async function checkSingleRedeem(client: Db, studentId: number, cls: Class, date: string) {
   if (cls.status !== "OPEN") throw new RuleError("CLASS_CLOSED", "班级已停开，不再接受预约");
+  if (date > cls.endDate) throw new RuleError("CLASS_ENDED", `该班学期已于 ${cls.endDate} 结束`);
+  if (date < cls.startDate) throw new RuleError("CLASS_ENDED", `该班学期 ${cls.startDate} 才开始`);
   const conflict = await findSingleLessonConflict(client, studentId, cls, date);
   if (conflict) throw new RuleError("R1_CONFLICT", `时间冲突：与「${conflict}」重叠`);
   const occ = await lessonOccupancy(client, cls.id, date);
@@ -82,43 +92,47 @@ export async function checkWithinAvailability(
   }
 }
 
-// R12b（建班/调班版）：校验未来 4 节（与 R7 容量同一展望期）的日期教师都有覆盖窗。
+// R12b（建班/调班版）：校验学期内未来 4 节（与 R7 容量同一展望期）的日期教师都有覆盖窗。
 // 缺哪天报哪天——教务拿着日期去找教师登记即可。
 async function checkAvailabilityHorizon(
   client: Db,
-  input: { teacherId: number; weekday: number; startMin: number; endMin: number }
+  input: { teacherId: number; weekday: number; startMin: number; endMin: number; startDate: string; endDate: string }
 ) {
-  const today = melbourneToday();
-  const first = nextOccurrence(input.weekday, today);
-  for (let i = 0; i < 4; i++) {
-    await checkWithinAvailability(client, input.teacherId, addDays(first, 7 * i), input.startMin, input.endMin);
+  const dates = upcomingOccurrences(input.weekday, input.startDate, input.endDate, melbourneToday(), 4);
+  if (dates.length === 0) throw new RuleError("BAD_TIME", "学期内没有可排的课节（检查学期起止日期）");
+  for (const date of dates) {
+    await checkWithinAvailability(client, input.teacherId, date, input.startMin, input.endMin);
   }
 }
 
-// 建班校验：时间合法 + R2 教师不撞班 + R12b 未来 4 节可用窗。
+// 建班校验：时间与学期日期合法 + R2 教师不撞班 + R12b 学期内未来 4 节可用窗。
+// endDate 必须在未来——不允许创建已经结束的班。
 export async function checkClassCreate(
   client: Db,
-  input: { teacherId: number; weekday: number; startMin: number; endMin: number },
+  input: { teacherId: number; weekday: number; startMin: number; endMin: number; startDate: string; endDate: string },
   excludeClassId?: number
 ) {
   if (input.startMin < 0 || input.endMin > 1440 || input.startMin >= input.endMin) {
     throw new RuleError("BAD_TIME", "上课时间无效");
   }
+  validateTermDates(input.startDate, input.endDate);
+  if (input.endDate < melbourneToday()) throw new RuleError("BAD_TIME", "学期结束日期不能在过去");
   await checkTeacherConflict(client, input.teacherId, input.weekday, input.startMin, input.endMin, excludeClassId);
   await checkAvailabilityHorizon(client, input);
 }
 
-// 调班校验：R2 恒查；时间或教师变更才查 R12b（只改容量不必要求教师补登记未来档期）
+// 调班校验：R2 恒查；时间或教师变更才查 R12b（只改容量/学期日期不必要求教师补登记未来档期）
 // + 改动时间后在读学生不得与其他班冲突（R1）+ 容量不得低于现有占用（R7 逆向）
 export async function checkClassEdit(
   client: Db,
   classId: number,
-  next: { teacherId: number; weekday: number; startMin: number; endMin: number; capacity: number },
-  current: { teacherId: number; weekday: number; startMin: number; endMin: number; capacity: number }
+  next: { teacherId: number; weekday: number; startMin: number; endMin: number; startDate: string; endDate: string; capacity: number },
+  current: { teacherId: number; weekday: number; startMin: number; endMin: number; startDate: string; endDate: string; capacity: number }
 ) {
   if (next.startMin < 0 || next.endMin > 1440 || next.startMin >= next.endMin) {
     throw new RuleError("BAD_TIME", "上课时间无效");
   }
+  validateTermDates(next.startDate, next.endDate);
   await checkTeacherConflict(client, next.teacherId, next.weekday, next.startMin, next.endMin, classId);
   const timeOrTeacherChanged =
     next.weekday !== current.weekday || next.startMin !== current.startMin ||
@@ -176,10 +190,10 @@ export async function checkEnroll(client: Db, studentId: number, classId: number
   const bal = await getBalance(client, studentId);
   if (bal < ENDING_THRESHOLD) throw new RuleError("R3_LOW_BALANCE", `余额 ${bal} 不足 ${ENDING_THRESHOLD}，需先充值`);
 
-  const today = melbourneToday();
-  const first = nextOccurrence(cls.weekday, today);
-  for (let i = 0; i < 4; i++) {
-    const date = addDays(first, 7 * i);
+  // 学期内未来 4 节逐节容量；学期已无剩余课节 = 等下学期再报
+  const dates = upcomingOccurrences(cls.weekday, cls.startDate, cls.endDate, melbourneToday(), 4);
+  if (dates.length === 0) throw new RuleError("CLASS_ENDED", `该班学期已于 ${cls.endDate} 结束，等新学期开班`);
+  for (const date of dates) {
     const occ = await lessonOccupancy(client, classId, date);
     if (occ.total + 1 > cls.capacity) throw new RuleError("R7_FULL", `${date} 该节已满（${occ.total}/${cls.capacity}）`);
   }

@@ -30,6 +30,7 @@ model Teacher {
   phone        String?          @unique
   passwordHash String
   classes      Class[]
+  templates    ClassTemplate[]
   teacherTime  TeacherTime[]
   caiwuEntries Caiwu[]
   feedbacks    LessonFeedback[]
@@ -56,10 +57,10 @@ model User {
   feedbacks       LessonFeedback[]
 }
 
-// 每周循环的固定班
+// 固定班 = 学期（term）内的每周循环：一班一周一节，lesson 在 [startDate, endDate] 内物化
 model Class {
   id           Int           @id @default(autoincrement())
-  name         String // "Y10 数学方法"
+  name         String // "VCE Maths Methods U1&2"
   subject      String
   yearLevel    Int
   teacherId    Int
@@ -67,10 +68,27 @@ model Class {
   weekday      Int // 1=周一 … 7=周日
   startMin     Int
   endMin       Int
+  startDate    String // 学期开始 "YYYY-MM-DD"（Melbourne 本地）
+  endDate      String // 学期结束；之后的日期不再排课
   capacity     Int           @default(12)
   status       String        @default("OPEN") // OPEN|CLOSED
   lessons      Lesson[]
   studentTimes StudentTime[]
+}
+
+// 班级模板：课程的可复用骨架（不含学期日期）。新学期开班 = 模板 + 学期起止日期。
+model ClassTemplate {
+  id        Int      @id @default(autoincrement())
+  name      String
+  subject   String
+  yearLevel Int
+  teacherId Int
+  teacher   Teacher  @relation(fields: [teacherId], references: [id])
+  weekday   Int
+  startMin  Int
+  endMin    Int
+  capacity  Int      @default(12)
+  createdAt DateTime @default(now())
 }
 
 // 某周某天的一节课（occurrence）：由 class 周循环按需生成（R13），unique(class, date)

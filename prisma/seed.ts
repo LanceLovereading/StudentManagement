@@ -5,12 +5,18 @@
 // 班级体系对齐 austineducation.com.au：VCE 按学科 Units 1–4、Year 分层班、Selective Entry（Y8–9）、UCAT（纯线上）。
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { addDays, melbourneToday, nextOccurrence } from "../src/lib/time";
+import { addDays, melbourneToday, nextOccurrence, weekdayOf } from "../src/lib/time";
 
 const db = new PrismaClient();
 const hash = (p: string) => bcrypt.hashSync(p, 8);
 const DAY = 864e5;
 const today = melbourneToday();
+
+// 班级学期：VCE Units 是学年班（官网口径 Units 1–4 跨学期），这里取"开学于 11 周前、
+// 结束于 8 周后"的学年班——既覆盖出勤历史的回溯周数，也保证未来 4 节（R7/R12b 展望期）有得排。
+const monday = addDays(today, -(weekdayOf(today) - 1));
+const termStart = addDays(monday, -77);
+const termEnd = addDays(monday, 55);
 const daysAgo = (n: number) => new Date(Date.now() - n * DAY);
 const daysAhead = (n: number) => new Date(Date.now() + n * DAY);
 
@@ -108,7 +114,7 @@ const CLASSES = [
 ];
 
 async function main() {
-  for (const m of ["orderLesson", "caiwu", "lessonFeedback", "voucher", "order", "studentParent", "parent", "studentTime", "lesson", "teacherTime", "class", "user", "admin", "teacher"] as const) {
+  for (const m of ["orderLesson", "caiwu", "lessonFeedback", "voucher", "order", "studentParent", "parent", "studentTime", "lesson", "teacherTime", "classTemplate", "class", "user", "admin", "teacher"] as const) {
     await (db as any)[m].deleteMany();
   }
   for (const sql of PARTIAL_INDEXES) await db.$executeRawUnsafe(sql);
@@ -133,16 +139,32 @@ async function main() {
   const classes: Record<string, { id: number; weekday: number }> = {};
   for (const c of CLASSES) {
     const row = await db.class.create({
-      data: { name: c.name, subject: c.subject, yearLevel: c.yearLevel, teacherId: teachers[c.teacher], weekday: c.weekday, startMin: c.startMin, endMin: c.endMin, capacity: c.capacity },
+      data: { name: c.name, subject: c.subject, yearLevel: c.yearLevel, teacherId: teachers[c.teacher], weekday: c.weekday, startMin: c.startMin, endMin: c.endMin, capacity: c.capacity, startDate: termStart, endDate: termEnd },
     });
     classes[c.name] = { id: row.id, weekday: c.weekday };
     // 下一节：兑换预览与学生端"下节课"的容量分母
     await db.lesson.create({ data: { classId: row.id, date: nextOccurrence(c.weekday, today), status: "SCHEDULED" } });
   }
 
-  // 教师可用时间 = 具体日期 + 时段（R12）：每个班未来 6 节的日期各登记一个覆盖窗
-  //（比班时前后各宽 60 分钟——真实档期比排课粗）。R12b 建班/调班校验未来 4 节，6 周留有余量。
-  for (const c of CLASSES) {
+  // 班级模板的创建移到 classes 循环之后（TEMPLATES 定义在那里，窗口生成也已覆盖模板时段）。
+
+  // 班级模板（下学期开班的骨架，时间刻意避开同师已有班）：
+  // Specialist Maths 周六 11:00-12:30（王老师，与 Year 8 Maths 14:00 不撞）；
+  // Scholarship Program 周日 13:00-15:00（刘老师）。可用窗按"班+模板"的时段生成，
+  // 所以两个模板都能直接开班；换到没登记的星期几才会触发 R12。
+  const TEMPLATES = [
+    { name: "VCE Specialist Maths U3&4", subject: "Specialist Maths", yearLevel: 12, teacher: "王老师", weekday: 6, startMin: 660, endMin: 750, capacity: 10 },
+    { name: "Scholarship Program (Y5-7)", subject: "Scholarship", yearLevel: 6, teacher: "刘老师", weekday: 7, startMin: 780, endMin: 900, capacity: 12 },
+  ];
+  for (const t of TEMPLATES) {
+    await db.classTemplate.create({
+      data: { name: t.name, subject: t.subject, yearLevel: t.yearLevel, teacherId: teachers[t.teacher], weekday: t.weekday, startMin: t.startMin, endMin: t.endMin, capacity: t.capacity },
+    });
+  }
+
+  // 教师可用时间 = 具体日期 + 时段（R12）：班与模板未来 6 节的日期各登记一个覆盖窗
+  //（比时段前后各宽 60 分钟——真实档期比排课粗）。R12b 建班/调班校验未来 4 节，6 周留有余量。
+  for (const c of [...CLASSES, ...TEMPLATES]) {
     const first = nextOccurrence(c.weekday, today);
     for (let i = 0; i < 6; i++) {
       await db.teacherTime.create({
