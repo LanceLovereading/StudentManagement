@@ -78,7 +78,7 @@ export default async function ClassEditPage({ params }: { params: Promise<{ id: 
         <ClassStatusButton classId={cls.id} status={cls.status} />
       </div>
 
-      <p><Link href="/admin/classes">← 返回班级列表</Link></p>
+      <p><Link href="/admin/classes">← 返回排班表</Link></p>
     </>
   );
 }

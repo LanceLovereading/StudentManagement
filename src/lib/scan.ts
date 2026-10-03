@@ -53,18 +53,30 @@ export type QueueUser = {
   statusChangedAt: Date;
 };
 
-// 跟进队列：试听过、未转化、未标记已跟进。scope 是 R6 的行级过滤。
+const FOLLOWED_VISIBLE_DAYS = 7; // 标记跟进后条目不消失：近 7 天内弱化保留，之后自然出队
+
+// 跟进队列：试听过、未转化；未跟进的排前，近 7 天内已跟进的弱化保留（留痕）。scope 是 R6 的行级过滤。
 export async function getFollowupQueue(scope: { ownerAdminId?: number }) {
+  const since = new Date(Date.now() - FOLLOWED_VISIBLE_DAYS * 864e5);
+  const vMatch = { kind: "TRIAL" as const, status: "ATTENDED" as const, OR: [{ followedUpAt: null }, { followedUpAt: { gte: since } }] };
   const rows = await db.user.findMany({
-    where: { status: "tried", ...scope, vouchers: { some: { kind: "TRIAL", status: "ATTENDED", followedUpAt: null } } },
-    include: { vouchers: { where: { kind: "TRIAL", status: "ATTENDED", followedUpAt: null }, orderBy: { id: "desc" } }, ownerAdmin: { select: { name: true } } },
+    where: { status: "tried", ...scope, vouchers: { some: vMatch } },
+    include: { vouchers: { where: vMatch, orderBy: { followedUpAt: "desc" } }, ownerAdmin: { select: { name: true } } },
     orderBy: { statusChangedAt: "asc" },
   });
-  return rows.map((u) => {
-    const v = u.vouchers[0];
-    const hours = (Date.now() - u.statusChangedAt.getTime()) / 36e5;
-    return { user: u, voucher: v, overdue: hours > FOLLOWUP_HOURS, waitHours: Math.floor(hours) };
-  });
+  return rows
+    .map((u) => {
+      // 重试听的学生可能同时有已跟进旧券和未跟进新券：未跟进的是主条目
+      const v = u.vouchers.find((x) => !x.followedUpAt) ?? u.vouchers[0];
+      const hours = (Date.now() - u.statusChangedAt.getTime()) / 36e5;
+      return {
+        user: u, voucher: v,
+        overdue: !v.followedUpAt && hours > FOLLOWUP_HOURS,
+        waitHours: Math.floor(hours),
+        followedAt: v.followedUpAt as Date | null,
+      };
+    })
+    .sort((a, b) => Number(!!a.followedAt) - Number(!!b.followedAt));
 }
 
 // 续费队列：ending（余额 ≤ 4），按"先见底先谈"排序

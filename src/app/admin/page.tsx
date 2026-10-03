@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getAdminSession, studentScope } from "@/lib/session";
 import { runDailyScan, getFollowupQueue, getRenewalQueue, getWakeupQueue } from "@/lib/scan";
-import { StatusBadge } from "@/components/badges";
+import { StatusBadge, fmtDateTime } from "@/components/badges";
 import DraftBox from "@/components/DraftBox";
 import FollowedButton from "@/components/FollowedButton";
 
@@ -18,13 +18,14 @@ export default async function Workbench() {
     getWakeupQueue(scope),
   ]);
   const showOwner = admin.level === "SENIOR";
+  const pending = followups.filter((f) => !f.followedAt).length;
 
   return (
     <>
       <h1>工作台 <span className="muted" style={{ fontSize: 14 }}>今天的欠账</span></h1>
       <div className="stats">
-        <div className={`stat ${followups.length > 0 ? "hot" : ""}`}>
-          <div className="num">{followups.length}</div>
+        <div className={`stat ${pending > 0 ? "hot" : ""}`}>
+          <div className="num">{pending}</div>
           <div className="label">待跟进（试听后未转化）</div>
         </div>
         <div className={`stat ${renewals.length > 0 ? "warm" : ""}`}>
@@ -38,13 +39,14 @@ export default async function Workbench() {
       </div>
 
       <section className="card">
-        <h2>跟进队列 <span className="muted">试听结束即入队，超 48h 标超时</span></h2>
+        <h2>跟进队列 <span className="muted">试听结束即入队，超 48h 标超时；已跟进的近 7 天弱化保留</span></h2>
         {followups.length === 0 && <p className="muted">暂无待跟进的学生。</p>}
-        {followups.map(({ user, voucher, overdue, waitHours }) => (
-          <div className="queue-item" key={user.id}>
+        {followups.map(({ user, voucher, overdue, waitHours, followedAt }) => (
+          <div className={`queue-item ${followedAt ? "done" : ""}`} key={user.id}>
             <div className="main">
               <Link href={`/admin/students/${user.id}`}><strong>{user.name}</strong></Link>{" "}
               <span className="badge">{voucher?.subject}</span>{" "}
+              {followedAt && <span className="badge ok">已跟进 {fmtDateTime(followedAt)}</span>}{" "}
               <span className="sub">
                 {waitHours < 24 ? `${waitHours} 小时前试听` : `${Math.floor(waitHours / 24)} 天前试听`}
                 {overdue ? " · 已超 48h" : ""} · {user.phone}
@@ -52,10 +54,16 @@ export default async function Workbench() {
               </span>
             </div>
             <div className="actions">
-              {overdue && <span className="badge warn">超时</span>}
-              <DraftBox userId={user.id} kind="trial" />
-              <FollowedButton voucherId={voucher!.id} />
-              <Link className="btn btn-sm btn-primary" href={`/admin/students/${user.id}#convert`}>转化</Link>
+              {followedAt ? (
+                <Link className="btn btn-sm btn-primary" href={`/admin/students/${user.id}#convert`}>转化</Link>
+              ) : (
+                <>
+                  {overdue && <span className="badge warn">超时</span>}
+                  <DraftBox userId={user.id} kind="trial" />
+                  <FollowedButton voucherId={voucher!.id} />
+                  <Link className="btn btn-sm btn-primary" href={`/admin/students/${user.id}#convert`}>转化</Link>
+                </>
+              )}
             </div>
           </div>
         ))}

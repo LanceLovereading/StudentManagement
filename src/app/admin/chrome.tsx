@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 const ITEMS = [
   ["/admin", "工作台"],
   ["/admin/students", "学生"],
-  ["/admin/classes", "班级"],
+  ["/admin/classes", "排班表"],
   ["/admin/vouchers", "试听券"],
 ] as const;
 
