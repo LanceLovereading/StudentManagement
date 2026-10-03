@@ -47,12 +47,89 @@ export async function lessonOccupancy(client: Db, classId: number, date: string)
   return { roster, visitors, total: roster + visitors };
 }
 
-// 单节预约（券兑换）的完整校验：R1 + R7。被兑换页预告与兑换接口共用——预告即裁决逻辑。
+// 单节预约（券兑换）的完整校验：班级停开 + R1 + R7。被兑换页预告与兑换接口共用——预告即裁决逻辑。
 export async function checkSingleRedeem(client: Db, studentId: number, cls: Class, date: string) {
+  if (cls.status !== "OPEN") throw new RuleError("CLASS_CLOSED", "班级已停开，不再接受预约");
   const conflict = await findSingleLessonConflict(client, studentId, cls, date);
   if (conflict) throw new RuleError("R1_CONFLICT", `时间冲突：与「${conflict}」重叠`);
   const occ = await lessonOccupancy(client, cls.id, date);
   if (occ.total + 1 > cls.capacity) throw new RuleError("R7_FULL", `该节已满（${occ.total}/${cls.capacity}）`);
+}
+
+// R2：同一教师不能出现在两个重叠时间的班（建班/调班时强制，int 比较）
+export async function checkTeacherConflict(
+  client: Db, teacherId: number, weekday: number, startMin: number, endMin: number, excludeClassId?: number
+) {
+  const others = await client.class.findMany({
+    where: { teacherId, weekday, ...(excludeClassId ? { id: { not: excludeClassId } } : {}) },
+  });
+  for (const c of others) {
+    if (overlaps(startMin, endMin, c.startMin, c.endMin)) {
+      throw new RuleError("R2_TEACHER_CONFLICT", `该教师在同一时间已有「${c.name}」`);
+    }
+  }
+}
+
+// R12b：班级时间必须完整落在该教师当天登记的某个可用窗内
+export async function checkWithinAvailability(
+  client: Db, teacherId: number, weekday: number, startMin: number, endMin: number
+) {
+  const windows = await client.teacherTime.findMany({ where: { teacherId, weekday } });
+  const inside = windows.some((w) => w.startMin <= startMin && endMin <= w.endMin);
+  if (!inside) throw new RuleError("R12_OUTSIDE_WINDOW", "班级时间未落在该教师当天登记的可用时段内");
+}
+
+// 建班校验：时间合法 + R2 + R12b。编辑复用同一函数，excludeClassId 用于排除自身（否则调班会和自己撞车）。
+export async function checkClassCreate(
+  client: Db,
+  input: { teacherId: number; weekday: number; startMin: number; endMin: number },
+  excludeClassId?: number
+) {
+  if (input.startMin < 0 || input.endMin > 1440 || input.startMin >= input.endMin) {
+    throw new RuleError("BAD_TIME", "上课时间无效");
+  }
+  await checkTeacherConflict(client, input.teacherId, input.weekday, input.startMin, input.endMin, excludeClassId);
+  await checkWithinAvailability(client, input.teacherId, input.weekday, input.startMin, input.endMin);
+}
+
+// 调班校验：建班的三条 + 改动时间后在读学生不得与其他班冲突（R1）+ 容量不得低于现有占用（R7 逆向）
+export async function checkClassEdit(
+  client: Db,
+  classId: number,
+  next: { teacherId: number; weekday: number; startMin: number; endMin: number; capacity: number },
+  current: { weekday: number; startMin: number; endMin: number; capacity: number }
+) {
+  await checkClassCreate(client, next, classId);
+  const timeChanged = next.weekday !== current.weekday || next.startMin !== current.startMin || next.endMin !== current.endMin;
+  if (timeChanged) {
+    const roster = await client.studentTime.findMany({ where: { classId, status: "ACTIVE" }, select: { userId: true } });
+    const rosterIds = roster.map((r) => r.userId);
+    if (rosterIds.length > 0) {
+      const others = await client.studentTime.findMany({
+        where: { userId: { in: rosterIds }, status: "ACTIVE", classId: { not: classId } },
+        include: { class: { select: { name: true, weekday: true, startMin: true, endMin: true } }, user: { select: { name: true } } },
+      });
+      const conflicts = new Set<string>();
+      for (const st of others) {
+        if (st.class.weekday === next.weekday && overlaps(st.class.startMin, st.class.endMin, next.startMin, next.endMin)) {
+          conflicts.add(`${st.user.name}（${st.class.name}）`);
+        }
+      }
+      if (conflicts.size > 0) {
+        throw new RuleError("R1_CONFLICT", `改时间会让在读学生冲突：${[...conflicts].slice(0, 3).join("、")}${conflicts.size > 3 ? " 等" : ""}`);
+      }
+    }
+  }
+  if (next.capacity !== current.capacity) {
+    const rosterCount = await client.studentTime.count({ where: { classId, status: "ACTIVE" } });
+    if (next.capacity < rosterCount) throw new RuleError("R7_CAPACITY", `容量不能低于在读人数（${rosterCount}）`);
+    const today = melbourneToday();
+    const futureLessons = await client.lesson.findMany({ where: { classId, date: { gte: today } }, select: { classId: true, date: true } });
+    for (const l of futureLessons) {
+      const occ = await lessonOccupancy(client, classId, l.date);
+      if (occ.total > next.capacity) throw new RuleError("R7_CAPACITY", `${l.date} 的课节已有 ${occ.total} 人占用，容量不能低于它`);
+    }
+  }
 }
 
 // 正式排班（转化 / 添加课）的完整校验：R1 循环版 + R3 余额门槛 + R7 未来 4 节逐节。

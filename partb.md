@@ -102,6 +102,7 @@ Next.js（App Router）+ TypeScript 全栈；Prisma + SQLite（部署则换 Post
 | 赠送课时 | `/api/grant` → caiwu(+N, GRANT) | 与充值同源，对账统一 |
 | 订单收款 | order 表启用：CREATED→PAID 同事务入账，REFUNDED 反冲 | 幂等 ref=order:<id>；退款不删历史 |
 | 家长只读门户 | `/parent`，复用 `lib/view.ts` 课表视图 | 家长零写入口 |
+| 人工排课 | `/admin/classes` 建班；`/admin/classes/[id]` 调班/停开（仅 senior） | R2（教师不撞班，编辑时排除自身）、R12b（班时落在教师可用窗内）、调班改时间自动校验在读学生不撞班（R1）、容量不低于现有占用（R7 逆向）；停开班拒绝新排班/兑换 |
 
 新增账本归属口径：caiwu.byAdminId / byTeacherId 恰好其一（admin 记账 vs 教师点名扣减）。
 点名分发是账本写入器的一处实现：在读学生与补课学生照扣（缺勤也照扣），试听学生免费走券状态机（出勤→ATTENDED/new→tried，缺席→NOSHOW 作废可重发）。

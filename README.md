@@ -52,6 +52,9 @@ npm run dev         # http://localhost:3000
 | R11 补课照扣 | 兑换页接受 RESCHEDULE（跨科目）；点名分发 `lib/rollcall.ts`：出勤/缺勤都扣，券 → USED |
 | R12 教师可用窗 | `/api/teacher/availability`（R12a 同师不重叠）；班级须落在窗内（R12b）在建班侧强制，本切片无建班入口 |
 | R4 点名幂等 | `lib/rollcall.ts` + caiwu unique(reason,user,ref)；逐生独立，R4_OVERDRAFT 不影响他人 |
+| R2 教师不撞班 | `lib/rules.ts` `checkTeacherConflict`（建班/调班，编辑排除自身） |
+| R12b 班时在窗内 | `checkWithinAvailability`：班时必须完整落在教师当天某个可用窗内 |
+| 调班影响面 | `checkClassEdit`：改时间自动校验在读学生不撞班（R1）；容量不得低于在读人数与未来课节占用 |
 | R14 状态机只由服务端驱动 | `ledger.ts` `recomputeLifecycle` + `scan.ts` `runDailyScan`（工作台加载时幂等执行；生产换 cron 调同一函数） |
 
 ## 破坏测试（绕过界面直接打 API，实际输出）
@@ -69,6 +72,10 @@ curl -X POST :3000/api/vouchers/<id>/convert -d '{"hours":1,"classId":<id>}'  # 
 curl -X POST :3000/api/teacher/availability -d '{"weekday":6,"startMin":800,"endMin":900}'   # 同师重叠 → 422 R12_OVERLAP
 # 同一订单重复「标记已收款」 → 422 ORDER_STATE（重放被守卫拒绝）
 # 余额为 0 的学生点名未到 → 该生 R4_OVERDRAFT，其余学生正常入账
+curl -X POST :3000/api/classes -d '{"name":"Y10 数学D",...,"startMin":1020,"endMin":1110}'  # 与数学A重叠 → 422 R2_TEACHER_CONFLICT
+curl -X POST :3000/api/classes -d '{"name":"Y10 数学E",...,"startMin":600,"endMin":690}'     # 教师无此可用窗 → 422 R12_OUTSIDE_WINDOW
+# 调班把数学B挪到与物理重叠 → 422 R1_CONFLICT（点名冲突的在读学生）；容量低于在读 → 422 R7_CAPACITY
+# 停开班后排班/兑换 → 422 CLASS_CLOSED
 ```
 
 每个拒绝都带机器可读原因码；DB 唯一索引是最后一道兜底（P2002 → `DUPLICATE`）。
