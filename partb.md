@@ -89,3 +89,19 @@ Next.js（App Router）+ TypeScript 全栈；Prisma + SQLite（部署则换 Post
 ### 已知的代价（我们主动选择的）
 
 出勤事实与扣减耦合在同一张表：点名页 = caiwu 写入器；"谁还没点名" = 名单 LEFT JOIN caiwu 的 NOT EXISTS 查询。可接受——如果未来反馈/考勤报表变复杂，再把事实表拆出去是一次单表迁移，不影响账本。
+
+## 10. 后续模块（切片验收后并入）
+
+以"架构立住之后，剩下都是加模块"为验收：全部在不动既有表语义的前提下插入，没有为任何一个模块新立平行账本。
+
+| 模块 | 落点 | 规则 |
+|---|---|---|
+| 点名/反馈操作台（教师端） | `/teacher/lessons/[id]`；分发逻辑 `lib/rollcall.ts` | R4（幂等不穿透，逐生独立）、R11（照扣）、R14（事件迁移） |
+| 教师登录 + 可上课时间 | `/teacher/availability` | R12a 同师时段不重叠（int 比较） |
+| 补课券跨班兑换 | 兑换页接受 RESCHEDULE，跨科目选班 | R11（预约权非免扣）、R13、R1/R7 |
+| 赠送课时 | `/api/grant` → caiwu(+N, GRANT) | 与充值同源，对账统一 |
+| 订单收款 | order 表启用：CREATED→PAID 同事务入账，REFUNDED 反冲 | 幂等 ref=order:<id>；退款不删历史 |
+| 家长只读门户 | `/parent`，复用 `lib/view.ts` 课表视图 | 家长零写入口 |
+
+新增账本归属口径：caiwu.byAdminId / byTeacherId 恰好其一（admin 记账 vs 教师点名扣减）。
+点名分发是账本写入器的一处实现：在读学生与补课学生照扣（缺勤也照扣），试听学生免费走券状态机（出勤→ATTENDED/new→tried，缺席→NOSHOW 作废可重发）。

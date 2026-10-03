@@ -2,6 +2,8 @@
 
 切片：「**一张试听券的一生**」——发券 → 兑换试听 → 标记结果 → 跟进提示（LLM 起草）→ 转化（充值+排班同事务）→ 课时将尽提示续费。对应 DESIGN.md 的两条支柱：完整性（队列）与稳定性（不变量）。
 
+切片验收后并入的后续模块（"架构立住之后，剩下都是加模块"的现场验证）：**点名/反馈操作台（教师端）**、**教师登录与可用时间**、**补课券跨班兑换**、**赠送课时**、**订单收款/退款**、**家长只读门户**——未新立任何平行账本，全部长在 caiwu / voucher / order_lesson 之上。
+
 技术栈：Next.js（App Router）+ TypeScript · Prisma + SQLite · iron-session · zod。时区口径：全程 Melbourne 本地日期字符串，无时区换算。
 
 ## 快速开始
@@ -19,7 +21,9 @@ npm run dev         # http://localhost:3000
 |---|---|---|---|
 | admin（senior） | `admin` | `admin123` | 读写全员；班级页可见名单 |
 | admin（junior） | `amy` / `ben` | `amy123` / `ben123` | 仅自己名下学生；班级只见余位数 |
+| 教师 | 手机号 `0499000001`…（王/李/陈/刘老师） | `teach123` | 我的课表、可上课时间、点名/反馈 |
 | 学生 | 手机号 `0401000001`… | `demo1234` | 只读「我的课表」 |
+| 家长 | 手机号 `13900000001`…（张爸爸/王芳/李妈妈） | `parent123` | 只读孩子余额与课表（王芳带两个孩子） |
 
 ## 演示脚本（对应工作台三个数字）
 
@@ -27,7 +31,9 @@ npm run dev         # http://localhost:3000
 2. 学生页录入新学生 → 发试听券 → 「去兑换」：逐班 **✓/✕ 预告**（王小宝的数学券：数学B 撞 Y11化学 → `R1_CONFLICT`；秦朗的英语券：英语B 满班 → `R7_FULL`）→ 兑换成功 → 标记出勤 → 工作台出现跟进项。
 3. 「起草跟进」：LLM 生成话术（可编辑、复制）；**LLM 不可用时降级为空白框，流程照常**。转化：充值 + 排班同事务，学生变在读。
 4. 待续费学生：登记充值 → 余额 > 4 自动复活为在读（每日扫描驱动）。
-5. 学生手机号登录：只读「我的课表」——下节课、剩余课时、新安排。学生侧零写入口（R5）。
+5. 教师登录（如刘老师 `0499000004`）：可上课时间登记（重叠被拒）→ 点名/反馈操作台：在读与补课学生**出勤照扣**（郑安琪余额 0 会被单独指出——R4 不穿透且不影响他人），补课学生出勤后 RESCHEDULE 券变 USED，试听学生免费走券状态机。
+6. admin：学生页创建订单 → 「标记已收款」同事务入账（ref=order，重放被守卫拒绝）→ 退款走反向条目，不删历史；赠送课时（GRANT）同源入账。
+7. 家长登录（王芳 `13900000002`）：只读看两个孩子的余额与课表。学生侧零写入口（R5）。
 
 ## 规则 → 代码映射
 
@@ -43,6 +49,9 @@ npm run dev         # http://localhost:3000
 | R9 有效期 | 兑换路由拒绝 + 每日扫描把过期 ISSUED 券转 EXPIRED |
 | R10 转化原子性 | `api/vouchers/[id]/convert` 单事务：入账→校验→排班→券 CONVERTED→学生 subscribed；重复提交被券状态守卫拦下 |
 | R13 预约物化 | 兑换事务内 lesson upsert |
+| R11 补课照扣 | 兑换页接受 RESCHEDULE（跨科目）；点名分发 `lib/rollcall.ts`：出勤/缺勤都扣，券 → USED |
+| R12 教师可用窗 | `/api/teacher/availability`（R12a 同师不重叠）；班级须落在窗内（R12b）在建班侧强制，本切片无建班入口 |
+| R4 点名幂等 | `lib/rollcall.ts` + caiwu unique(reason,user,ref)；逐生独立，R4_OVERDRAFT 不影响他人 |
 | R14 状态机只由服务端驱动 | `ledger.ts` `recomputeLifecycle` + `scan.ts` `runDailyScan`（工作台加载时幂等执行；生产换 cron 调同一函数） |
 
 ## 破坏测试（绕过界面直接打 API，实际输出）
@@ -57,6 +66,9 @@ curl -X POST :3000/api/vouchers/<id>/redeem -d '{"classId":1}'                # 
 curl -X POST :3000/api/vouchers/<id>/convert -d '{"hours":1,"classId":<id>}'  # 余额不足 → 422 R3_LOW_BALANCE
 # 同一转化请求重放 → 422 R10_GUARD（券已 CONVERTED，状态守卫幂等）
 # junior 会话写 senior 学生 → 403 FORBIDDEN
+curl -X POST :3000/api/teacher/availability -d '{"weekday":6,"startMin":800,"endMin":900}'   # 同师重叠 → 422 R12_OVERLAP
+# 同一订单重复「标记已收款」 → 422 ORDER_STATE（重放被守卫拒绝）
+# 余额为 0 的学生点名未到 → 该生 R4_OVERDRAFT，其余学生正常入账
 ```
 
 每个拒绝都带机器可读原因码；DB 唯一索引是最后一道兜底（P2002 → `DUPLICATE`）。
@@ -80,6 +92,8 @@ LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=...
 ## 已知取舍
 
 - SQLite + `prisma db push`；R8/报名 ACTIVE 唯一两个**部分唯一索引**在 seed 里以裸 SQL 建立（Prisma 不直接支持）。换 Postgres/Turso 时改 `provider` + `DATABASE_URL` 后用 `prisma migrate dev` 重建即可，索引会进迁移文件。
+- 订单（order 表，原 v2 设计）已提前启用：线下收款标记 PAID；接支付网关时挂回调即可，账本无需迁移。家长门户先于家长 CRM：只读，无站内信/通知。
+- 账本归属：caiwu.byAdminId / byTeacherId 恰好其一（admin 记账 vs 教师点名扣减），由调用方保证。
 - 每日扫描在工作台加载时幂等执行，未引入 cron 依赖；多实例部署时改为定时任务调用 `runDailyScan()`。
 - 兑换页预告与接口裁决共用 `checkSingleRedeem`——一份校验逻辑，没有第二套标准。
 - 出勤扣费（caiwu ATTENDANCE 写入）属点名模块（下阶段），账本结构已就位；种子里已有历史出勤流水供对账演示。
