@@ -4,15 +4,16 @@
 
 切片验收后并入的后续模块（"架构立住之后，剩下都是加模块"的现场验证）：**点名/反馈操作台（教师端）**、**教师登录与可用时间**、**补课券跨班兑换**、**赠送课时**、**订单收款/退款**、**家长只读门户**——未新立任何平行账本，全部长在 caiwu / voucher / order_lesson 之上。
 
-技术栈：Next.js（App Router）+ TypeScript · Prisma + SQLite · iron-session · zod。时区口径：全程 Melbourne 本地日期字符串，无时区换算。
+技术栈：Next.js（App Router）+ TypeScript · Prisma + PostgreSQL（Neon 就绪，本地任意 Postgres）· iron-session · zod。时区口径：全程 Melbourne 本地日期字符串，无时区换算。
 
 ## 快速开始
 
 ```bash
 npm install
-npm run db:push     # 建表（dev.db）
-npm run db:seed     # 演示数据 + 部分唯一索引
-npm run dev         # http://localhost:3000
+cp .env.example .env        # DATABASE_URL 指向本地/远程 Postgres
+npm run db:push             # 建表
+npm run db:seed             # 演示数据 + 部分唯一索引
+npm run dev                 # http://localhost:3000
 ```
 
 演示账号：
@@ -94,6 +95,44 @@ LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=...
 
 未配置 / 超时 / 格式不符 → `{ok:true, degraded:true}`，前端降级为空白话术框——**券的状态机与跟进流程不依赖 LLM**。
 
+## 部署（Vercel + Neon）
+
+线上形态 = Vercel（应用）+ Neon（Postgres）。provider 在开发期就从 SQLite 切到了 Postgres，业务代码与种子零改动。
+
+**0. 前提**：Neon 与 Vercel 各一个账号（均可用 GitHub 登录）。Neon 建库时区域选 `ap-southeast-2`（悉尼，离墨尔本用户最近）。
+
+**1. 建库 + 种子（本机跑，用 Neon 的 direct 连接串——主机不带 `-pooler`）**
+
+```bash
+DATABASE_URL="postgresql://<user>:<pw>@ep-xxx.ap-southeast-2.aws.neon.tech/neondb?sslmode=require" npm run db:push
+DATABASE_URL="postgresql://<同上>" npm run db:seed
+```
+
+⚠️ `db:seed` 会**清空重建全部数据**——线上库只跑这一次（演示数据就位后不要再跑）。
+
+**2. 部署到 Vercel**
+
+```bash
+npm i -g vercel
+vercel                      # 首次引导登录 + 导入项目，构建选项全部默认
+vercel env add DATABASE_URL production   # 粘 pooled 串（主机带 -pooler）+ &pgbouncer=true
+vercel env add SESSION_SECRET production # openssl rand -base64 32
+vercel --prod
+```
+
+**3. 回填 APP_URL 并重发**（重要，只差这一步会话就完整了）
+
+```bash
+vercel env add APP_URL production        # https://<你的应用>.vercel.app
+vercel --prod
+```
+
+会话 cookie 的 Secure 标志由 `APP_URL`/`VERCEL` 推导（见 `session-options.ts` 注释——Safari 拒绝在明文 HTTP 上保存 Secure cookie，这是当初本地调试踩过的坑）；部署天然 HTTPS，回填后即生效。
+
+**4. 可选**：`LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL`（任何 OpenAI 兼容接口；不配置时跟进话术起草降级为空白框，流程照常走通）。
+
+环境变量全集见 `.env.example`。演示账号与本地一致（种子已建）。
+
 ## AI 使用说明（按作业要求披露）
 
 - **AI 辅助**：脚手架与代码生成（Prisma 模型、Next.js 页面与 API、种子脚本）、规则引擎实现、curl 破坏测试脚本、文档整理；设计讨论中的方案对比与风险提示。
@@ -102,7 +141,7 @@ LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=...
 
 ## 已知取舍
 
-- SQLite + `prisma db push`；R8/报名 ACTIVE 唯一两个**部分唯一索引**在 seed 里以裸 SQL 建立（Prisma 不直接支持）。换 Postgres/Turso 时改 `provider` + `DATABASE_URL` 后用 `prisma migrate dev` 重建即可，索引会进迁移文件。
+- PostgreSQL + `prisma db push`；R8/报名 ACTIVE 唯一两个**部分唯一索引**在 seed 里以裸 SQL 建立（Prisma 不直接支持，Postgres 原生支持部分唯一索引）。历史上本地曾用 SQLite 开发，切 provider 后种子与业务代码零改动——字段全部是 Int/String/DateTime，时区决策在应用层不在库层。
 - 订单（order 表，原 v2 设计）已提前启用：线下收款标记 PAID；接支付网关时挂回调即可，账本无需迁移。家长门户先于家长 CRM：只读，无站内信/通知。
 - 账本归属：caiwu.byAdminId / byTeacherId 恰好其一（admin 记账 vs 教师点名扣减），由调用方保证。
 - 会话 cookie 的 Secure 标志由部署地址推导（APP_URL / Vercel），不跟 NODE_ENV 走——踩过的坑：生产模式下 cookie 带 Secure、本地是明文 HTTP，Safari 严格拒收导致"登录成功却永远弹回登录页"，而 Chrome/Firefox 把 localhost 当可信上下文，把这个差异藏住了。
