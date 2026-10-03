@@ -4,10 +4,19 @@ import { db } from "@/lib/db";
 import { getSession } from "@/lib/session";
 import { RuleError, errorResponse } from "@/lib/errors";
 
-// 四角色统一登录：admin 用户名 / teacher·user·parent 手机号
+// 四角色统一登录：admin 用户名 / teacher·user·parent 手机号。
+// 输入容错：去首尾空格（含全角空格）、全角数字转半角——中文输入法下的常见失误不挡人。
+function normalizeAccount(raw: string): string {
+  return raw
+    .replace(/[\u3000]/g, " ")
+    .trim()
+    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const { role, account, password } = (await req.json()) as { role?: string; account?: string; password?: string };
+    const { role, account: rawAccount, password } = (await req.json()) as { role?: string; account?: string; password?: string };
+    const account = rawAccount ? normalizeAccount(rawAccount) : "";
     if (!account || !password) throw new RuleError("BAD_REQUEST", "请输入账号和密码");
 
     if (role === "user") {

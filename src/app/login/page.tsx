@@ -13,7 +13,14 @@ const PLACEHOLDER: Record<string, string> = {
   admin: "admin / amy / ben",
   teacher: "0499000001",
   user: "0401000001",
-  parent: "1390000001",
+  parent: "13900000001",
+};
+
+const HINTS: Record<string, string> = {
+  admin: "演示账号：admin / admin123（junior：amy、ben，密码同后缀）",
+  teacher: "演示账号：0499000001 王老师 / teach123（…02 李 · …03 陈 · …04 刘）",
+  user: "演示账号：0401000001 张小弟 / demo1234（…02 起同理）",
+  parent: "演示账号：13900000001 张爸爸 / parent123（…02 王芳带两孩）",
 };
 
 async function submit(role: string, account: string, password: string) {
@@ -71,6 +78,7 @@ export default function LoginPage() {
           </div>
           <button className="btn btn-primary" disabled={busy} style={{ width: "100%" }}>登录</button>
           {err && <p className="err">{err}</p>}
+          <p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>{HINTS[tab]}</p>
         </form>
       </div>
     </main>
