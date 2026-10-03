@@ -1,0 +1,151 @@
+// 学生管理系统 · v1 数据模型
+// 设计原则见 DESIGN.md：券是承诺（voucher），账本是现实（caiwu），lesson 只回答"这节课存在与否"。
+// 时间存储：周循环用 weekday(1=周一..7=周日) + start_min/end_min（距午夜分钟数）——重叠判断是两个 int 比较；
+//          lesson.date 用 "YYYY-MM-DD" 字符串（Melbourne 本地日期），ISO 字典序即时间序，全程不做时区换算。
+// 钱与课时分离：v1 收款线下，admin 手工写 caiwu(+N, PURCHASE)；order（交易事实）随家长系统 v2 落地。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Admin {
+  id             Int       @id @default(autoincrement())
+  name           String    @unique
+  passwordHash   String
+  level          String // SENIOR（读写全员）| JUNIOR（仅自己名下学生，R6）
+  students       User[] // owner_admin_id：学生归属，转 admin = 改外键 + 留痕
+  vouchersIssued Voucher[]
+  caiwuEntries   Caiwu[]
+}
+
+model Teacher {
+  id           Int          @id @default(autoincrement())
+  name         String       @unique
+  phone        String?
+  passwordHash String? // 教师登录随教师模块下批（v1 切片不含）
+  classes      Class[]
+  teacherTime  TeacherTime[]
+}
+
+// 学生（上课的人）。家长体系 v2 落 parent / student_parent；v1 phone 即家庭联系电话。
+model User {
+  id              Int           @id @default(autoincrement())
+  name            String
+  phone           String        @unique
+  passwordHash    String
+  ownerAdminId    Int
+  ownerAdmin      Admin         @relation(fields: [ownerAdminId], references: [id])
+  // 生命周期状态机（主管线）：new→tried→subscribed→ending→churning，只由服务端驱动（R14）
+  status          String        @default("new")
+  statusChangedAt DateTime      @default(now())
+  createdAt       DateTime      @default(now())
+  studentTimes    StudentTime[]
+  vouchers        Voucher[]
+  caiwu           Caiwu[]
+  orderLessons    OrderLesson[]
+}
+
+// 每周循环的固定班
+model Class {
+  id           Int           @id @default(autoincrement())
+  name         String // "Y10 数学方法"
+  subject      String
+  yearLevel    Int
+  teacherId    Int
+  teacher      Teacher       @relation(fields: [teacherId], references: [id])
+  weekday      Int // 1=周一 … 7=周日
+  startMin     Int
+  endMin       Int
+  capacity     Int           @default(12)
+  status       String        @default("OPEN") // OPEN|CLOSED
+  lessons      Lesson[]
+  studentTimes StudentTime[]
+}
+
+// 某周某天的一节课（occurrence）：由 class 周循环按需生成（R13），unique(class, date)
+model Lesson {
+  id           Int           @id @default(autoincrement())
+  classId      Int
+  class        Class         @relation(fields: [classId], references: [id])
+  date         String // "YYYY-MM-DD"
+  status       String        @default("SCHEDULED") // SCHEDULED|DONE|CANCELLED（老师请假=CANCELLED，不产生扣减）
+  orderLessons OrderLesson[]
+
+  @@unique([classId, date])
+}
+
+// 学生报名（循环占用）。试听/补课不进这张表——按节占用走 order_lesson
+model StudentTime {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  classId   Int
+  class     Class    @relation(fields: [classId], references: [id])
+  status    String   @default("ACTIVE") // ACTIVE|DROPPED
+  startedAt DateTime @default(now())
+}
+
+// 试听/赠送/优惠/补课，统一的"承诺"（单笔交易的子管线）
+model Voucher {
+  id           Int          @id @default(autoincrement())
+  userId       Int
+  user         User         @relation(fields: [userId], references: [id])
+  kind         String // TRIAL|GIFT_HOURS|DISCOUNT|RESCHEDULE
+  subject      String? // TRIAL 用，与 class.subject 匹配
+  // TRIAL: ISSUED→REDEEMED→ATTENDED→CONVERTED，旁路 NOSHOW|EXPIRED；GIFT: ISSUED→USED；RESCHEDULE: ISSUED→REDEEMED→USED
+  status       String
+  validUntil   DateTime
+  issuedBy     Int
+  issuedByAdmin Admin       @relation(fields: [issuedBy], references: [id])
+  source       String? // 渠道（v2 CRM 报表用）
+  outcomeNote  String? // 试听结果备注（跟进话术的输入）
+  followedUpAt DateTime? // 标记已跟进：跟进队列退出的锚点
+  createdAt    DateTime     @default(now())
+  orderLessons OrderLesson[]
+}
+
+// 唯一账本：余额可推导（SUM(delta)），balance_after 是审计快照；幂等锚 unique(reason, user, ref)
+model Caiwu {
+  id           Int      @id @default(autoincrement())
+  userId       Int
+  user         User     @relation(fields: [userId], references: [id])
+  delta        Int // 单位=课时；出勤 −1（PRESENT 与 NOSHOW 同，缺勤照扣无豁免）
+  reason       String // PURCHASE|ATTENDANCE|GRANT|ADJUST|REFUND
+  status       String? // 仅 ATTENDANCE 行：PRESENT|NOSHOW
+  ref          String // lesson:<id> / voucher:<id> / manual:<uuid>
+  balanceAfter Int
+  byAdminId    Int
+  byAdmin      Admin    @relation(fields: [byAdminId], references: [id])
+  createdAt    DateTime @default(now())
+
+  @@unique([reason, userId, ref])
+}
+
+// 预约关联表：谁/哪张券，占了哪节课。目标 lesson 不存在则现场物化（R13）。
+// 单节容量计数 = student_time 名单 + 本表占位行（试听/补课同池，R7）
+model OrderLesson {
+  id        Int      @id @default(autoincrement())
+  lessonId  Int
+  lesson    Lesson   @relation(fields: [lessonId], references: [id])
+  studentId Int
+  student   User     @relation(fields: [studentId], references: [id])
+  orderId   Int? // v2：order 侧启用
+  voucherId Int?
+  voucher   Voucher? @relation(fields: [voucherId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+// 教师每周可用窗（兼职刚需）。v1 切片无教师页面，模型与 R12 校验就位
+model TeacherTime {
+  id        Int     @id @default(autoincrement())
+  teacherId Int
+  teacher   Teacher @relation(fields: [teacherId], references: [id])
+  weekday   Int
+  startMin  Int
+  endMin    Int
+}

@@ -1,0 +1,218 @@
+// 种子数据：为「一张试听券的一生」演示铺齐所有状态。
+// 三个数字开箱即有戏：待跟进（tried+ATTENDED 未跟进）、待续费（ending）、唤醒（churning）；
+// 另铺：满班（Y10英语B 容量 2 已满，R7 拒绝）、冲突（王小宝在 Y11化学，试数学撞 R1）、
+//       过期券（罗盘，R9 拒绝）、NOSHOW 券（可重发）、双班学生（林晨）。
+import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcryptjs";
+import { addDays, melbourneToday, nextOccurrence } from "../src/lib/time";
+
+const db = new PrismaClient();
+const hash = (p: string) => bcrypt.hashSync(p, 8);
+const DAY = 864e5;
+const today = melbourneToday();
+const daysAgo = (n: number) => new Date(Date.now() - n * DAY);
+const daysAhead = (n: number) => new Date(Date.now() + n * DAY);
+
+// Prisma 不直接支持部分唯一索引，这里手工建（R8 / student_time ACTIVE 唯一，见 README）
+const PARTIAL_INDEXES = [
+  `CREATE UNIQUE INDEX IF NOT EXISTS one_open_trial_per_user ON "Voucher"("userId") WHERE kind = 'TRIAL' AND status IN ('ISSUED','REDEEMED')`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS active_enrollment_per_class ON "StudentTime"("userId", "classId") WHERE status = 'ACTIVE'`,
+];
+
+type Spec = {
+  name: string;
+  phone: string;
+  admin: "amy" | "ben";
+  status: "new" | "tried" | "subscribed" | "ending" | "churning";
+  statusChangedDaysAgo?: number;
+  enroll?: { cls: string; weeks: number }[];
+  targetBalance?: number; // 全部出勤记完后的最终余额
+  grant?: number;
+  voucher?: {
+    kind: string;
+    subject?: string;
+    status: string;
+    issuedDaysAgo: number; // 有效期 = 发放起 30 天
+    outcomeNote?: string;
+    followedUpDaysAgo?: number;
+    redeemInto?: string; // 兑换进的班名（next occurrence）
+  };
+};
+
+const AMY: Spec[] = [
+  { name: "张小弟", phone: "0401000001", admin: "amy", status: "tried", statusChangedDaysAgo: 3,
+    voucher: { kind: "TRIAL", subject: "数学", status: "ATTENDED", issuedDaysAgo: 10, outcomeNote: "基础扎实，互动积极，家长在场陪同" } },
+  { name: "李小妹", phone: "0401000002", admin: "amy", status: "tried", statusChangedDaysAgo: 2,
+    voucher: { kind: "TRIAL", subject: "英语", status: "ATTENDED", issuedDaysAgo: 12, outcomeNote: "口语好，语法弱", followedUpDaysAgo: 1 } },
+  { name: "王小宝", phone: "0401000003", admin: "amy", status: "subscribed",
+    enroll: [{ cls: "Y11 化学", weeks: 0 }], targetBalance: 5,
+    voucher: { kind: "TRIAL", subject: "数学", status: "ISSUED", issuedDaysAgo: 2 } },
+  { name: "赵小虎", phone: "0401000004", admin: "amy", status: "new",
+    voucher: { kind: "TRIAL", subject: "物理", status: "REDEEMED", issuedDaysAgo: 5, redeemInto: "Y12 物理" } },
+  { name: "陈小明", phone: "0401000005", admin: "amy", status: "subscribed",
+    enroll: [{ cls: "Y10 数学A", weeks: 6 }], targetBalance: 6 },
+  { name: "陈小红", phone: "0401000006", admin: "amy", status: "subscribed",
+    enroll: [{ cls: "Y11 英语A", weeks: 8 }], targetBalance: 8, grant: 2 },
+  { name: "周天乐", phone: "0401000007", admin: "amy", status: "ending", statusChangedDaysAgo: 5,
+    enroll: [{ cls: "Y10 数学A", weeks: 8 }], targetBalance: 3 },
+  { name: "吴优", phone: "0401000008", admin: "amy", status: "ending", statusChangedDaysAgo: 3,
+    enroll: [{ cls: "Y10 英语B", weeks: 6 }], targetBalance: 2 },
+  { name: "郑安琪", phone: "0401000009", admin: "amy", status: "churning", statusChangedDaysAgo: 20,
+    enroll: [{ cls: "Y11 化学", weeks: 10 }], targetBalance: 0, grant: 1 },
+  { name: "孙悦", phone: "0401000010", admin: "amy", status: "subscribed",
+    enroll: [{ cls: "Y12 物理", weeks: 5 }], targetBalance: 10 },
+  { name: "林晨", phone: "0401000011", admin: "amy", status: "subscribed",
+    enroll: [{ cls: "Y10 数学B", weeks: 4 }, { cls: "Y12 物理", weeks: 4 }], targetBalance: 7 },
+  { name: "何雨", phone: "0401000012", admin: "amy", status: "new" },
+];
+
+const BEN: Spec[] = [
+  { name: "冯乐天", phone: "0402000001", admin: "ben", status: "tried", statusChangedDaysAgo: 6,
+    voucher: { kind: "TRIAL", subject: "数学", status: "ATTENDED", issuedDaysAgo: 13, outcomeNote: "计算粗心，家长希望周末班" } },
+  { name: "顾小舟", phone: "0402000002", admin: "ben", status: "subscribed",
+    enroll: [{ cls: "Y10 数学A", weeks: 7 }], targetBalance: 11 },
+  { name: "韩梅", phone: "0402000003", admin: "ben", status: "subscribed",
+    enroll: [{ cls: "Y11 英语A", weeks: 9 }], targetBalance: 5 },
+  { name: "曹阳", phone: "0402000004", admin: "ben", status: "ending", statusChangedDaysAgo: 6,
+    enroll: [{ cls: "Y12 物理", weeks: 9 }], targetBalance: 1 },
+  { name: "许诺", phone: "0402000005", admin: "ben", status: "churning", statusChangedDaysAgo: 25,
+    enroll: [{ cls: "Y10 数学B", weeks: 10 }], targetBalance: 0 },
+  { name: "石磊", phone: "0402000006", admin: "ben", status: "subscribed",
+    enroll: [{ cls: "Y11 化学", weeks: 6 }], targetBalance: 13 },
+  { name: "唐诗", phone: "0402000007", admin: "ben", status: "subscribed",
+    enroll: [{ cls: "Y10 英语B", weeks: 5 }], targetBalance: 9 },
+  { name: "秦朗", phone: "0402000008", admin: "ben", status: "new",
+    voucher: { kind: "TRIAL", subject: "英语", status: "ISSUED", issuedDaysAgo: 3 } },
+  { name: "茜茜", phone: "0402000009", admin: "ben", status: "new",
+    voucher: { kind: "TRIAL", subject: "数学", status: "NOSHOW", issuedDaysAgo: 15, outcomeNote: "约了没来，可重发" } },
+  { name: "高远", phone: "0402000010", admin: "ben", status: "subscribed",
+    enroll: [{ cls: "Y10 数学B", weeks: 8 }], targetBalance: 6 },
+  { name: "罗盘", phone: "0402000011", admin: "ben", status: "new",
+    voucher: { kind: "TRIAL", subject: "数学", status: "EXPIRED", issuedDaysAgo: 40 } },
+  { name: "万绮雯", phone: "0402000012", admin: "ben", status: "subscribed",
+    enroll: [{ cls: "Y10 数学A", weeks: 5 }], targetBalance: 14 },
+];
+
+const CLASSES = [
+  { name: "Y10 数学A", subject: "数学", yearLevel: 10, teacher: "王老师", weekday: 3, startMin: 990, endMin: 1080, capacity: 12 }, // 周三 16:30-18:00
+  { name: "Y10 数学B", subject: "数学", yearLevel: 10, teacher: "王老师", weekday: 6, startMin: 840, endMin: 930, capacity: 12 },  // 周六 14:00-15:30
+  { name: "Y11 英语A", subject: "英语", yearLevel: 11, teacher: "李老师", weekday: 4, startMin: 990, endMin: 1110, capacity: 12 }, // 周四 16:30-18:30
+  { name: "Y12 物理", subject: "物理", yearLevel: 12, teacher: "陈老师", weekday: 6, startMin: 600, endMin: 720, capacity: 12 },   // 周六 10:00-12:00
+  { name: "Y10 英语B", subject: "英语", yearLevel: 10, teacher: "李老师", weekday: 7, startMin: 600, endMin: 720, capacity: 2 },   // 周日 10:00-12:00（满班演示）
+  { name: "Y11 化学", subject: "化学", yearLevel: 11, teacher: "刘老师", weekday: 6, startMin: 840, endMin: 960, capacity: 12 },   // 周六 14:00-16:00（与数学B重叠→R1 演示）
+];
+
+async function main() {
+  for (const m of ["orderLesson", "caiwu", "voucher", "studentTime", "lesson", "teacherTime", "class", "user", "admin", "teacher"] as const) {
+    await (db as any)[m].deleteMany();
+  }
+  for (const sql of PARTIAL_INDEXES) await db.$executeRawUnsafe(sql);
+
+  const adminRow = {
+    admin: await db.admin.create({ data: { name: "admin", passwordHash: hash("admin123"), level: "SENIOR" } }),
+    amy: await db.admin.create({ data: { name: "amy", passwordHash: hash("amy123"), level: "JUNIOR" } }),
+    ben: await db.admin.create({ data: { name: "ben", passwordHash: hash("ben123"), level: "JUNIOR" } }),
+  };
+
+  const teachers: Record<string, number> = {};
+  for (const [name, phone, windows] of [
+    ["王老师", "0499000001", [[3, 840, 1200], [6, 540, 1140]]],
+    ["李老师", "0499000002", [[4, 840, 1200], [7, 540, 1140]]],
+    ["陈老师", "0499000003", [[6, 480, 900]]],
+    ["刘老师", "0499000004", [[6, 780, 1080]]],
+  ] as [string, string, [number, number, number][]][]) {
+    const t = await db.teacher.create({ data: { name, phone, passwordHash: hash(`t-${phone}`) } });
+    teachers[name] = t.id;
+    for (const [weekday, startMin, endMin] of windows) {
+      await db.teacherTime.create({ data: { teacherId: t.id, weekday, startMin, endMin } });
+    }
+  }
+
+  const classes: Record<string, { id: number; weekday: number }> = {};
+  for (const c of CLASSES) {
+    const row = await db.class.create({
+      data: { name: c.name, subject: c.subject, yearLevel: c.yearLevel, teacherId: teachers[c.teacher], weekday: c.weekday, startMin: c.startMin, endMin: c.endMin, capacity: c.capacity },
+    });
+    classes[c.name] = { id: row.id, weekday: c.weekday };
+    // 下一节：兑换预览与学生端"下节课"的容量分母
+    await db.lesson.create({ data: { classId: row.id, date: nextOccurrence(c.weekday, today), status: "SCHEDULED" } });
+  }
+
+  const bal = new Map<number, number>();
+  async function ledger(userId: number, delta: number, reason: string, ref: string, byAdminId: number, status?: string, createdAt?: Date) {
+    const balanceAfter = (bal.get(userId) ?? 0) + delta;
+    bal.set(userId, balanceAfter);
+    await db.caiwu.create({ data: { userId, delta, reason, status, ref, balanceAfter, byAdminId, ...(createdAt ? { createdAt } : {}) } });
+  }
+
+  let seq = 0;
+  for (const spec of [...AMY, ...BEN]) {
+    const owner = spec.admin === "amy" ? adminRow.amy : adminRow.ben;
+    const u = await db.user.create({
+      data: { name: spec.name, phone: spec.phone, passwordHash: hash("demo1234"), ownerAdminId: owner.id, status: "new" },
+    });
+
+    // 先一次性购课（购买 = 总出勤 + 目标余额 − 赠送），再逐班逐周出勤
+    const enrollments = spec.enroll ?? [];
+    const totalWeeks = enrollments.reduce((s, e) => s + e.weeks, 0);
+    if (spec.targetBalance != null) {
+      const purchase = totalWeeks + spec.targetBalance - (spec.grant ?? 0);
+      await ledger(u.id, purchase, "PURCHASE", `manual:seed-p${++seq}`, owner.id, undefined, daysAgo(totalWeeks * 7 + 1));
+      if (spec.grant) await ledger(u.id, spec.grant, "GRANT", `manual:seed-g${seq}`, owner.id, undefined, daysAgo(totalWeeks * 7));
+      for (const e of enrollments) {
+        const cls = classes[e.cls];
+        await db.studentTime.create({ data: { userId: u.id, classId: cls.id, status: "ACTIVE", startedAt: daysAgo(e.weeks * 7) } });
+        for (let w = 1; w <= e.weeks; w++) {
+          const date = addDays(nextOccurrence(cls.weekday, today), -7 * w);
+          const lesson = await db.lesson.upsert({
+            where: { classId_date: { classId: cls.id, date } },
+            create: { classId: cls.id, date, status: "DONE" },
+            update: { status: "DONE" },
+          });
+          await ledger(u.id, -1, "ATTENDANCE", `lesson:${lesson.id}`, owner.id, "PRESENT", daysAgo(7 * w));
+        }
+      }
+    } else if (enrollments.length > 0) {
+      for (const e of enrollments) {
+        await db.studentTime.create({ data: { userId: u.id, classId: classes[e.cls].id, status: "ACTIVE" } });
+      }
+    }
+
+    if (spec.voucher) {
+      const v = spec.voucher;
+      const voucher = await db.voucher.create({
+        data: {
+          userId: u.id, kind: v.kind, subject: v.subject, status: v.status,
+          validUntil: daysAhead(30 - v.issuedDaysAgo),
+          issuedBy: owner.id, outcomeNote: v.outcomeNote,
+          followedUpAt: v.followedUpDaysAgo ? daysAgo(v.followedUpDaysAgo) : null,
+          createdAt: daysAgo(v.issuedDaysAgo),
+        },
+      });
+      if (v.redeemInto) {
+        const cls = classes[v.redeemInto];
+        const date = nextOccurrence(cls.weekday, today);
+        const lesson = await db.lesson.upsert({
+          where: { classId_date: { classId: cls.id, date } },
+          create: { classId: cls.id, date, status: "SCHEDULED" },
+          update: {},
+        });
+        await db.orderLesson.create({ data: { lessonId: lesson.id, studentId: u.id, voucherId: voucher.id } });
+      }
+    }
+
+    await db.user.update({
+      where: { id: u.id },
+      data: { status: spec.status, ...(spec.statusChangedDaysAgo ? { statusChangedAt: daysAgo(spec.statusChangedDaysAgo) } : {}) },
+    });
+  }
+
+  const counts = {
+    users: await db.user.count(), vouchers: await db.voucher.count(), caiwu: await db.caiwu.count(),
+    lessons: await db.lesson.count(), tried: await db.user.count({ where: { status: "tried" } }),
+    ending: await db.user.count({ where: { status: "ending" } }), churning: await db.user.count({ where: { status: "churning" } }),
+  };
+  console.log("seeded:", counts);
+}
+
+main().catch((e) => { console.error(e); process.exit(1); }).finally(() => db.$disconnect());
