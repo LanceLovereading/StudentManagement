@@ -106,6 +106,11 @@ a.cal-block:hover { text-decoration: none; border-color: var(--accent); }
 .cal-block .t { display: block; color: var(--muted); font-size: 11.5px; }
 .cal-block.closed { background: #f2f3f5; border-color: var(--line); }
 .cal-block.closed strong, .cal-block.closed .t { color: var(--muted); }
+.cal-block.more {
+  background: repeating-linear-gradient(45deg, #eef1fd, #eef1fd 8px, #e4e9fb 8px, #e4e9fb 16px);
+  border-style: dashed; border-color: #b6c3f0;
+}
+a.cal-block.more:hover { border-color: var(--accent); border-style: solid; }
 
 /* 徽章 */
 .badge {

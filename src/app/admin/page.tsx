@@ -1,24 +1,42 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { db } from "@/lib/db";
 import { getAdminSession, studentScope } from "@/lib/session";
 import { runDailyScan, getFollowupQueue, getRenewalQueue, getWakeupQueue } from "@/lib/scan";
 import { StatusBadge, fmtDateTime } from "@/components/badges";
 import DraftBox from "@/components/DraftBox";
 import FollowedButton from "@/components/FollowedButton";
+import StudentRoster from "@/components/student-roster";
+import { CreateStudentForm } from "@/components/student-forms";
 
 // 第一屏 = 今天的欠账。队列由每日扫描 + 查询生成，不是手工维护的 todo 表。
+// 花名册折叠在队列之下（搜索进学生详情）——工作台是唯一的学生入口，不再单设学生列表页。
 export default async function Workbench() {
   const admin = await getAdminSession();
   if (!admin) redirect("/login");
   await runDailyScan();
   const scope = studentScope(admin);
-  const [followups, renewals, wakeups] = await Promise.all([
+  const [followups, renewals, wakeups, rosterUsers] = await Promise.all([
     getFollowupQueue(scope),
     getRenewalQueue(scope),
     getWakeupQueue(scope),
+    db.user.findMany({
+      where: scope,
+      include: {
+        caiwu: { orderBy: { id: "desc" }, take: 1 },
+        ownerAdmin: { select: { name: true } },
+        _count: { select: { studentTimes: { where: { status: "ACTIVE" } } } },
+      },
+      orderBy: { id: "asc" },
+    }),
   ]);
   const showOwner = admin.level === "SENIOR";
   const pending = followups.filter((f) => !f.followedAt).length;
+  const roster = rosterUsers.map((u) => ({
+    id: u.id, name: u.name, phone: u.phone, status: u.status,
+    balance: u.caiwu[0]?.balanceAfter ?? 0, classes: u._count.studentTimes,
+    ...(showOwner ? { owner: u.ownerAdmin.name } : {}),
+  }));
 
   return (
     <>
@@ -102,6 +120,21 @@ export default async function Workbench() {
             </div>
           </div>
         ))}
+      </section>
+
+      <section className="card" id="roster">
+        <details>
+          <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+            花名册与录入（{roster.length} 人）{" "}
+            <span className="muted" style={{ fontWeight: 400, fontSize: 13 }}>搜索姓名/手机号 → 进学生详情：发券、排课、收款都在那里</span>
+          </summary>
+          <div style={{ marginTop: 12 }}>
+            <CreateStudentForm />
+            <div style={{ marginTop: 14 }}>
+              <StudentRoster rows={roster} showOwner={showOwner} />
+            </div>
+          </div>
+        </details>
       </section>
     </>
   );
