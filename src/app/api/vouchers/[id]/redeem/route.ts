@@ -5,7 +5,8 @@ import { RuleError, errorResponse } from "@/lib/errors";
 import { checkSingleRedeem } from "@/lib/rules";
 import { melbourneToday, nextOccurrence } from "@/lib/time";
 
-// 兑换试听券：R9 有效期 → R1 冲突 → R7 容量 → R13 物化 lesson + 写 order_lesson → 券 REDEEMED。
+// 兑换：试听券或补课券（RESCHEDULE，可跨班兑一节，R11）。
+// R9 有效期 → R1 冲突 → R7 容量 → R13 物化 lesson + 写 order_lesson → 券 REDEEMED。
 // 预告（兑换页）与裁决（这里）共用 checkSingleRedeem——界面预告即服务端裁决逻辑。
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -16,7 +17,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!classId) throw new RuleError("BAD_REQUEST", "缺少班级");
 
     const voucher = await assertVoucherVisible(admin, Number(id));
-    if (voucher.kind !== "TRIAL") throw new RuleError("VOUCHER_STATE", "仅试听券可兑换");
+    if (voucher.kind !== "TRIAL" && voucher.kind !== "RESCHEDULE") {
+      throw new RuleError("VOUCHER_STATE", "仅试听券/补课券可兑换");
+    }
     if (voucher.status !== "ISSUED") throw new RuleError("VOUCHER_STATE", `该券当前状态为 ${voucher.status}，不可兑换`);
 
     if (voucher.validUntil.getTime() < Date.now()) {
@@ -25,7 +28,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     const cls = await db.class.findUniqueOrThrow({ where: { id: classId } });
-    if (cls.subject !== voucher.subject) throw new RuleError("SUBJECT_MISMATCH", "科目不匹配");
+    if (voucher.kind === "TRIAL" && cls.subject !== voucher.subject) throw new RuleError("SUBJECT_MISMATCH", "科目不匹配");
     const date = nextOccurrence(cls.weekday, melbourneToday());
 
     const lessonId = await db.$transaction(async (tx) => {

@@ -26,6 +26,21 @@ export async function getUserSession(): Promise<UserSession | null> {
   return { id: s.id, name: s.name ?? "" };
 }
 
+export type TeacherSession = { id: number; name: string };
+export type ParentSession = { id: number; name: string };
+
+export async function getTeacherSession(): Promise<TeacherSession | null> {
+  const s = await getSession();
+  if (s.role !== "teacher" || !s.id) return null;
+  return { id: s.id, name: s.name ?? "" };
+}
+
+export async function getParentSession(): Promise<ParentSession | null> {
+  const s = await getSession();
+  if (s.role !== "parent" || !s.id) return null;
+  return { id: s.id, name: s.name ?? "" };
+}
+
 // R6：junior 只能触碰自己名下的学生。所有学生查询/写入都过这个 where。
 export function studentScope(admin: AdminSession): { ownerAdminId?: number } {
   return admin.level === "SENIOR" ? {} : { ownerAdminId: admin.id };

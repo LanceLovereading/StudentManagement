@@ -34,6 +34,7 @@ type Spec = {
     status: string;
     issuedDaysAgo: number; // 有效期 = 发放起 30 天
     outcomeNote?: string;
+    source?: string;
     followedUpDaysAgo?: number;
     redeemInto?: string; // 兑换进的班名（next occurrence）
   };
@@ -41,12 +42,12 @@ type Spec = {
 
 const AMY: Spec[] = [
   { name: "张小弟", phone: "0401000001", admin: "amy", status: "tried", statusChangedDaysAgo: 3,
-    voucher: { kind: "TRIAL", subject: "数学", status: "ATTENDED", issuedDaysAgo: 10, outcomeNote: "基础扎实，互动积极，家长在场陪同" } },
+    voucher: { kind: "TRIAL", subject: "数学", status: "ATTENDED", issuedDaysAgo: 10, outcomeNote: "基础扎实，互动积极，家长在场陪同", source: "大众点评" } },
   { name: "李小妹", phone: "0401000002", admin: "amy", status: "tried", statusChangedDaysAgo: 2,
     voucher: { kind: "TRIAL", subject: "英语", status: "ATTENDED", issuedDaysAgo: 12, outcomeNote: "口语好，语法弱", followedUpDaysAgo: 1 } },
   { name: "王小宝", phone: "0401000003", admin: "amy", status: "subscribed",
     enroll: [{ cls: "Y11 化学", weeks: 0 }], targetBalance: 5,
-    voucher: { kind: "TRIAL", subject: "数学", status: "ISSUED", issuedDaysAgo: 2 } },
+    voucher: { kind: "TRIAL", subject: "数学", status: "ISSUED", issuedDaysAgo: 2, source: "小红书" } },
   { name: "赵小虎", phone: "0401000004", admin: "amy", status: "new",
     voucher: { kind: "TRIAL", subject: "物理", status: "REDEEMED", issuedDaysAgo: 5, redeemInto: "Y12 物理" } },
   { name: "陈小明", phone: "0401000005", admin: "amy", status: "subscribed",
@@ -60,7 +61,8 @@ const AMY: Spec[] = [
   { name: "郑安琪", phone: "0401000009", admin: "amy", status: "churning", statusChangedDaysAgo: 20,
     enroll: [{ cls: "Y11 化学", weeks: 10 }], targetBalance: 0, grant: 1 },
   { name: "孙悦", phone: "0401000010", admin: "amy", status: "subscribed",
-    enroll: [{ cls: "Y12 物理", weeks: 5 }], targetBalance: 10 },
+    enroll: [{ cls: "Y12 物理", weeks: 5 }], targetBalance: 10,
+    voucher: { kind: "RESCHEDULE", status: "REDEEMED", issuedDaysAgo: 2, redeemInto: "Y11 化学" } },
   { name: "林晨", phone: "0401000011", admin: "amy", status: "subscribed",
     enroll: [{ cls: "Y10 数学B", weeks: 4 }, { cls: "Y12 物理", weeks: 4 }], targetBalance: 7 },
   { name: "何雨", phone: "0401000012", admin: "amy", status: "new" },
@@ -70,7 +72,8 @@ const BEN: Spec[] = [
   { name: "冯乐天", phone: "0402000001", admin: "ben", status: "tried", statusChangedDaysAgo: 6,
     voucher: { kind: "TRIAL", subject: "数学", status: "ATTENDED", issuedDaysAgo: 13, outcomeNote: "计算粗心，家长希望周末班" } },
   { name: "顾小舟", phone: "0402000002", admin: "ben", status: "subscribed",
-    enroll: [{ cls: "Y10 数学A", weeks: 7 }], targetBalance: 11 },
+    enroll: [{ cls: "Y10 数学A", weeks: 7 }], targetBalance: 11,
+    voucher: { kind: "RESCHEDULE", status: "ISSUED", issuedDaysAgo: 1 } },
   { name: "韩梅", phone: "0402000003", admin: "ben", status: "subscribed",
     enroll: [{ cls: "Y11 英语A", weeks: 9 }], targetBalance: 5 },
   { name: "曹阳", phone: "0402000004", admin: "ben", status: "ending", statusChangedDaysAgo: 6,
@@ -82,7 +85,7 @@ const BEN: Spec[] = [
   { name: "唐诗", phone: "0402000007", admin: "ben", status: "subscribed",
     enroll: [{ cls: "Y10 英语B", weeks: 5 }], targetBalance: 9 },
   { name: "秦朗", phone: "0402000008", admin: "ben", status: "new",
-    voucher: { kind: "TRIAL", subject: "英语", status: "ISSUED", issuedDaysAgo: 3 } },
+    voucher: { kind: "TRIAL", subject: "英语", status: "ISSUED", issuedDaysAgo: 3, source: "转介绍" } },
   { name: "茜茜", phone: "0402000009", admin: "ben", status: "new",
     voucher: { kind: "TRIAL", subject: "数学", status: "NOSHOW", issuedDaysAgo: 15, outcomeNote: "约了没来，可重发" } },
   { name: "高远", phone: "0402000010", admin: "ben", status: "subscribed",
@@ -103,7 +106,7 @@ const CLASSES = [
 ];
 
 async function main() {
-  for (const m of ["orderLesson", "caiwu", "voucher", "studentTime", "lesson", "teacherTime", "class", "user", "admin", "teacher"] as const) {
+  for (const m of ["orderLesson", "caiwu", "lessonFeedback", "voucher", "order", "studentParent", "parent", "studentTime", "lesson", "teacherTime", "class", "user", "admin", "teacher"] as const) {
     await (db as any)[m].deleteMany();
   }
   for (const sql of PARTIAL_INDEXES) await db.$executeRawUnsafe(sql);
@@ -121,7 +124,7 @@ async function main() {
     ["陈老师", "0499000003", [[6, 480, 900]]],
     ["刘老师", "0499000004", [[6, 780, 1080]]],
   ] as [string, string, [number, number, number][]][]) {
-    const t = await db.teacher.create({ data: { name, phone, passwordHash: hash(`t-${phone}`) } });
+    const t = await db.teacher.create({ data: { name, phone, passwordHash: hash("teach123") } });
     teachers[name] = t.id;
     for (const [weekday, startMin, endMin] of windows) {
       await db.teacherTime.create({ data: { teacherId: t.id, weekday, startMin, endMin } });
@@ -157,7 +160,17 @@ async function main() {
     const totalWeeks = enrollments.reduce((s, e) => s + e.weeks, 0);
     if (spec.targetBalance != null) {
       const purchase = totalWeeks + spec.targetBalance - (spec.grant ?? 0);
-      await ledger(u.id, purchase, "PURCHASE", `manual:seed-p${++seq}`, owner.id, undefined, daysAgo(totalWeeks * 7 + 1));
+      if (purchase > 0) {
+        const order = await db.order.create({
+          data: {
+            userId: u.id, subject: enrollments[0] ? CLASSES.find((c) => c.name === enrollments[0].cls)!.subject : null,
+            hours: purchase, amountCents: purchase * 45000, status: "PAID",
+            paidAt: daysAgo(totalWeeks * 7 + 1), createdByAdminId: owner.id, createdAt: daysAgo(totalWeeks * 7 + 1),
+          },
+        });
+        seq++;
+        await ledger(u.id, purchase, "PURCHASE", `order:${order.id}`, owner.id, undefined, daysAgo(totalWeeks * 7 + 1));
+      }
       if (spec.grant) await ledger(u.id, spec.grant, "GRANT", `manual:seed-g${seq}`, owner.id, undefined, daysAgo(totalWeeks * 7));
       for (const e of enrollments) {
         const cls = classes[e.cls];
@@ -207,9 +220,23 @@ async function main() {
     });
   }
 
+  // 家长：多对多，王芳带两个孩子（多孩家庭演示）
+  const userIdByName = new Map((await db.user.findMany({ select: { id: true, name: true } })).map((u) => [u.name, u.id]));
+  for (const [pname, phone, kids] of [
+    ["张爸爸", "13900000001", [["张小弟", "FATHER", true]]],
+    ["王芳", "13900000002", [["王小宝", "MOTHER", true], ["何雨", "MOTHER", false]]],
+    ["李妈妈", "13900000003", [["李小妹", "MOTHER", true]]],
+  ] as [string, string, [string, string, boolean][]][]) {
+    const parent = await db.parent.create({ data: { name: pname, phone, passwordHash: hash("parent123") } });
+    for (const [kid, relation, isPrimary] of kids) {
+      const studentId = userIdByName.get(kid)!;
+      await db.studentParent.create({ data: { studentId, parentId: parent.id, relation, isPrimary } });
+    }
+  }
+
   const counts = {
     users: await db.user.count(), vouchers: await db.voucher.count(), caiwu: await db.caiwu.count(),
-    lessons: await db.lesson.count(), tried: await db.user.count({ where: { status: "tried" } }),
+    lessons: await db.lesson.count(), orders: await db.order.count(), parents: await db.parent.count(), tried: await db.user.count({ where: { status: "tried" } }),
     ending: await db.user.count({ where: { status: "ending" } }), churning: await db.user.count({ where: { status: "churning" } }),
   };
   console.log("seeded:", counts);

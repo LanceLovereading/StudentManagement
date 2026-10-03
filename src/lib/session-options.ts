@@ -1,6 +1,6 @@
 // 纯会话配置：不 import Prisma，供 middleware（Edge 运行时）与 Node 侧共用。
 export type SessionData = {
-  role?: "admin" | "user";
+  role?: "admin" | "teacher" | "user" | "parent";
   id?: number;
   name?: string;
   level?: "SENIOR" | "JUNIOR";

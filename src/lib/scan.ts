@@ -1,5 +1,6 @@
 import { db } from "./db";
 import { ENDING_THRESHOLD, CHURN_DAYS } from "./ledger";
+import { melbourneToday, nextOccurrence } from "./time";
 
 export const FOLLOWUP_HOURS = 48; // tried 超 48h 标"超时"（可配置假设值）；提示本身在试听结束即出现
 
@@ -12,6 +13,18 @@ export async function runDailyScan() {
     where: { status: "ISSUED", validUntil: { lt: new Date() } },
     data: { status: "EXPIRED" },
   });
+
+  // 物化各班下一节（"查看时补建"的兜底）：教师点名页/兑换预览/学生端都有稳定可链接的课节
+  const openClasses = await db.class.findMany({ where: { status: "OPEN" }, select: { id: true, weekday: true } });
+  const today = melbourneToday();
+  for (const c of openClasses) {
+    const date = nextOccurrence(c.weekday, today);
+    await db.lesson.upsert({
+      where: { classId_date: { classId: c.id, date } },
+      create: { classId: c.id, date, status: "SCHEDULED" },
+      update: {},
+    });
+  }
 
   const users = await db.user.findMany({
     select: {

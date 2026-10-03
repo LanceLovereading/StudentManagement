@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { getSession } from "@/lib/session";
 import { RuleError, errorResponse } from "@/lib/errors";
 
+// 四角色统一登录：admin 用户名 / teacher·user·parent 手机号
 export async function POST(req: NextRequest) {
   try {
     const { role, account, password } = (await req.json()) as { role?: string; account?: string; password?: string };
@@ -18,6 +19,28 @@ export async function POST(req: NextRequest) {
       s.name = user.name;
       await s.save();
       return NextResponse.json({ ok: true, redirect: "/my" });
+    }
+
+    if (role === "teacher") {
+      const teacher = await db.teacher.findUnique({ where: { phone: account } });
+      if (!teacher || !bcrypt.compareSync(password, teacher.passwordHash)) throw new RuleError("BAD_CREDENTIALS", "手机号或密码错误");
+      const s = await getSession();
+      s.role = "teacher";
+      s.id = teacher.id;
+      s.name = teacher.name;
+      await s.save();
+      return NextResponse.json({ ok: true, redirect: "/teacher" });
+    }
+
+    if (role === "parent") {
+      const parent = await db.parent.findUnique({ where: { phone: account } });
+      if (!parent || !bcrypt.compareSync(password, parent.passwordHash)) throw new RuleError("BAD_CREDENTIALS", "手机号或密码错误");
+      const s = await getSession();
+      s.role = "parent";
+      s.id = parent.id;
+      s.name = parent.name;
+      await s.save();
+      return NextResponse.json({ ok: true, redirect: "/parent" });
     }
 
     const admin = await db.admin.findUnique({ where: { name: account } });

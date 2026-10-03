@@ -2,7 +2,21 @@
 
 import { useState } from "react";
 
-async function submit(role: "admin" | "user", account: string, password: string) {
+const TABS = [
+  ["admin", "教务"],
+  ["teacher", "教师"],
+  ["user", "学生"],
+  ["parent", "家长"],
+] as const;
+
+const PLACEHOLDER: Record<string, string> = {
+  admin: "admin / amy / ben",
+  teacher: "0499000001",
+  user: "0401000001",
+  parent: "1390000001",
+};
+
+async function submit(role: string, account: string, password: string) {
   const r = await fetch("/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -14,58 +28,50 @@ async function submit(role: "admin" | "user", account: string, password: string)
 }
 
 export default function LoginPage() {
+  const [tab, setTab] = useState<string>("admin");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
-  function onSubmit(role: "admin" | "user") {
-    return async (e: React.FormEvent<HTMLFormElement>) => {
-      e.preventDefault();
-      const f = new FormData(e.currentTarget);
-      setBusy(true);
-      setErr("");
-      try {
-        await submit(role, String(f.get("account") ?? ""), String(f.get("password") ?? ""));
-      } catch (ex) {
-        setErr((ex as Error).message);
-      } finally {
-        setBusy(false);
-      }
-    };
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    setBusy(true);
+    setErr("");
+    try {
+      await submit(tab, String(f.get("account") ?? ""), String(f.get("password") ?? ""));
+    } catch (ex) {
+      setErr((ex as Error).message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
     <main className="login-wrap">
-      <div className="login-card">
+      <div className="login-card" style={{ width: 400 }}>
         <h1>Austin Edu · 学生管理</h1>
         <p className="muted">线索别漏掉，交付别出丑。</p>
 
-        <form onSubmit={onSubmit("admin")} className="login-form">
-          <h2>教务登录</h2>
+        <div style={{ display: "flex", gap: 6, marginTop: 14 }}>
+          {TABS.map(([role, label]) => (
+            <button key={role} type="button" className={`btn btn-sm ${tab === role ? "btn-primary" : ""}`} onClick={() => { setTab(role); setErr(""); }}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <form onSubmit={onSubmit} className="login-form">
           <div className="field">
-            <label>用户名</label>
-            <input name="account" className="input" placeholder="admin / amy / ben" autoComplete="username" />
+            <label>{tab === "admin" ? "用户名" : "手机号"}</label>
+            <input name="account" className="input" placeholder={PLACEHOLDER[tab]} autoComplete="username" />
           </div>
           <div className="field">
             <label>密码</label>
             <input name="password" type="password" className="input" autoComplete="current-password" />
           </div>
-          <button className="btn btn-primary" disabled={busy}>教务进入工作台</button>
+          <button className="btn btn-primary" disabled={busy} style={{ width: "100%" }}>登录</button>
+          {err && <p className="err">{err}</p>}
         </form>
-
-        <form onSubmit={onSubmit("user")} className="login-form">
-          <h2>学生 / 家长登录</h2>
-          <div className="field">
-            <label>手机号</label>
-            <input name="account" className="input" placeholder="0401000001" autoComplete="username" />
-          </div>
-          <div className="field">
-            <label>密码</label>
-            <input name="password" type="password" className="input" autoComplete="current-password" />
-          </div>
-          <button className="btn" disabled={busy}>查看我的课表</button>
-        </form>
-
-        {err && <p className="err">{err}</p>}
       </div>
     </main>
   );

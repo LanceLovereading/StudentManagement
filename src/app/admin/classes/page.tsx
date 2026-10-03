@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { db } from "@/lib/db";
 import { getAdminSession, studentScope } from "@/lib/session";
 import { lessonOccupancy } from "@/lib/rules";
@@ -36,7 +37,8 @@ export default async function ClassesPage() {
   const rows = await Promise.all(classes.map(async (c) => {
     const date = nextOccurrence(c.weekday, today);
     const occ = await lessonOccupancy(db, c.id, date);
-    return { c, date, seats: c.capacity - occ.total };
+    const lesson = await db.lesson.findUnique({ where: { classId_date: { classId: c.id, date } }, select: { id: true } });
+    return { c, date, seats: c.capacity - occ.total, lessonId: lesson?.id ?? null };
   }));
 
   return (
@@ -48,12 +50,14 @@ export default async function ClassesPage() {
             <tr><th>班级</th><th>时间</th><th>老师</th><th>在读</th><th>余位（下节）</th>{isSenior && <th>名单</th>}</tr>
           </thead>
           <tbody>
-            {rows.map(({ c, date, seats }) => (
+            {rows.map(({ c, date, seats, lessonId }) => (
               <tr key={c.id}>
                 <td><strong>{c.name}</strong> <span className="muted">({c.subject} Y{c.yearLevel})</span></td>
                 <td>
                   {weekdayName(c.weekday)} {fmtMin(c.startMin)}-{fmtMin(c.endMin)}
-                  <br /><span className="muted" style={{ fontSize: 12 }}>下节 {date}</span>
+                  <br /><span className="muted" style={{ fontSize: 12 }}>
+                    下节 {lessonId ? <Link href={`/admin/lessons/${lessonId}`}>{date}</Link> : date}
+                  </span>
                 </td>
                 <td className="muted">{c.teacher.name}</td>
                 <td>{c._count.studentTimes}</td>

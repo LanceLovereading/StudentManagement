@@ -13,12 +13,18 @@ export async function middleware(req: NextRequest) {
   if (pathname.startsWith("/admin") && session.role !== "admin") {
     return NextResponse.redirect(new URL("/login", req.url));
   }
+  if (pathname.startsWith("/teacher") && session.role !== "teacher") {
+    return NextResponse.redirect(new URL("/login", req.url));
+  }
   if (pathname === "/my" && session.role !== "user") {
+    return NextResponse.redirect(new URL("/login", req.url));
+  }
+  if (pathname === "/parent" && session.role !== "parent") {
     return NextResponse.redirect(new URL("/login", req.url));
   }
   return res;
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/my"],
+  matcher: ["/admin/:path*", "/teacher/:path*", "/my", "/parent"],
 };
