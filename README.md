@@ -2,6 +2,8 @@
 
 切片：「**一张试听券的一生**」——发券 → 兑换试听 → 标记结果 → 跟进提示（LLM 起草）→ 转化（充值+排班同事务）→ 课时将尽提示续费。对应 DESIGN.md 的两条支柱：完整性（队列）与稳定性（不变量）。
 
+文档导航：[DESIGN.md](DESIGN.md)（Part A：业务理解 / 范围 / 模型 / 规则 / 假设与问题 / 页面结构 / 切片理由）· [partb.md](partb.md)（Part B：演示与破坏测试 / 技术栈 / 附录）· [WALKTHROUGH.md](WALKTHROUGH.md)（单功能实现全解：券的一生，从页面到数据库约束）。
+
 切片验收后并入的后续模块（"架构立住之后，剩下都是加模块"的现场验证）：**点名/反馈操作台（教师端）**、**教师登录与可用时间**、**补课券跨班兑换**、**赠送课时**、**订单收款/退款**、**家长只读门户**——未新立任何平行账本，全部长在 caiwu / voucher / order_lesson 之上。
 
 技术栈：Next.js（App Router）+ TypeScript · Prisma + PostgreSQL（Neon 就绪，本地任意 Postgres）· iron-session · zod。时区口径：全程 Melbourne 本地日期字符串，无时区换算。
