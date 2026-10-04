@@ -87,13 +87,15 @@ curl -X POST :3000/api/classes -d '{"templateId":<id>,"startDate":"...","endDate
 
 ## LLM 跟进起草（唯一 LLM 落点）
 
-`POST /api/draft`：结构化输出（`{message, suggestedClass, riskTag}`）经 zod 服务端校验。配置（可选，任何 OpenAI 兼容接口）：
+`POST /api/draft`：结构化输出（`{message, suggestedClass, riskTag}`）经 zod 服务端校验。线上已配置 **NVIDIA NIM**（OpenAI 兼容接口，模型 `openai/gpt-oss-20b`——同目录下中文质量更好的 DeepSeek 模型实测延迟 20~47s 不稳定，会撞函数时长上限，故选它）；key 只存环境变量，不入仓库。本地配置（可选，任何 OpenAI 兼容接口）：
 
 ```bash
-LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=...
+LLM_BASE_URL=https://integrate.api.nvidia.com/v1   # 代码自动拼 /chat/completions
+LLM_API_KEY=...
+LLM_MODEL=openai/gpt-oss-20b
 ```
 
-未配置 / 超时 / 格式不符 → `{ok:true, degraded:true}`，前端降级为空白话术框——**券的状态机与跟进流程不依赖 LLM**。
+未配置 / 超时（30s，函数上限 60s 内预留降级空间）/ 格式不符 → `{ok:true, degraded:true}`，前端降级为空白话术框——**券的状态机与跟进流程不依赖 LLM**。
 
 ## 部署（Vercel + Neon）——已上线
 
@@ -102,7 +104,7 @@ LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=...
 
 - **Neon**：project `odd-shape-59489822`，branch `production`（ap-southeast-2）。`neon link/config/deploy` 已配置；建表 + 种子已跑（**不要再跑 seed，它会清库重建**）。连接串由 `neon link` 写入本地 `.env`：`DATABASE_URL`（pooled）给运行时，`DATABASE_URL_UNPOOLED`（direct）给建表/种子；Prisma 过 PgBouncer 所需的 `pgbouncer=true` 由 `src/lib/db.ts` 自动追加，不怕 neon 回写覆盖。
 - **Vercel**：项目 `austin-sms`。环境变量 `DATABASE_URL` / `SESSION_SECRET` / `APP_URL` 已配（APP_URL 决定会话 cookie 的 Secure 标志——见 `session-options.ts` 注释，Safari 拒绝在明文 HTTP 上保存 Secure cookie，这是本地调试踩过的坑）。部署保护（Vercel Authentication）已关闭以便评审直接访问；要再开：Project Settings → Deployment Protection。
-- **重部署**：`vercel --prod`。可选变量 `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL`（任何 OpenAI 兼容接口；不配置时跟进话术起草降级为空白框，流程照常走通）。
+- **重部署**：`vercel --prod`（或 push 到 main 自动部署）。`LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` 已配置在 Vercel（NVIDIA NIM，跟进话术起草用；key 只在环境变量，不入仓库）。
 - 本地开发连 Neon（`.env` 已就位）：`npm run dev`。换 Neon 项目/分支：`neon link --project-id <id> --branch <branch> -y` 后 `DATABASE_URL="$DATABASE_URL_UNPOOLED" npm run db:push && npm run db:seed`。
 
 ## AI 使用说明（按作业要求披露）

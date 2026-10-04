@@ -16,6 +16,10 @@ const DraftSchema = z.object({
   riskTag: z.string(),
 });
 
+// 平台函数上限（Hobby 60s）内留出降级空间：超时必须在平台杀掉函数前触发，
+// 降级路径才总是有机会执行。
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
   try {
     const admin = await getAdminSession();
@@ -69,7 +73,7 @@ export async function POST(req: NextRequest) {
 
     try {
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 20000);
+      const timer = setTimeout(() => ctrl.abort(), 30000);
       const r = await fetch(`${base.replace(/\/+$/, "")}/chat/completions`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
