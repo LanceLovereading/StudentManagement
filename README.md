@@ -98,6 +98,7 @@ LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=...
 ## 部署（Vercel + Neon）——已上线
 
 **线上地址：<https://austin-sms.vercel.app>**（演示账号见上表，数据为种子演示数据）
+代码仓库：<https://github.com/LanceLovereading/StudentManagement>（已连 Vercel，push 到 main 自动部署生产）
 
 - **Neon**：project `odd-shape-59489822`，branch `production`（ap-southeast-2）。`neon link/config/deploy` 已配置；建表 + 种子已跑（**不要再跑 seed，它会清库重建**）。连接串由 `neon link` 写入本地 `.env`：`DATABASE_URL`（pooled）给运行时，`DATABASE_URL_UNPOOLED`（direct）给建表/种子；Prisma 过 PgBouncer 所需的 `pgbouncer=true` 由 `src/lib/db.ts` 自动追加，不怕 neon 回写覆盖。
 - **Vercel**：项目 `austin-sms`。环境变量 `DATABASE_URL` / `SESSION_SECRET` / `APP_URL` 已配（APP_URL 决定会话 cookie 的 Secure 标志——见 `session-options.ts` 注释，Safari 拒绝在明文 HTTP 上保存 Secure cookie，这是本地调试踩过的坑）。部署保护（Vercel Authentication）已关闭以便评审直接访问；要再开：Project Settings → Deployment Protection。
