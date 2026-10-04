@@ -3,6 +3,8 @@
 Austin Education 全栈工程师技术作业 · Part A
 
 > 一句话定位：机构的生意由两件事决定——**线索别漏掉，交付别出丑**。这个系统只负责这两件事，其他一切以后再加。
+>
+> 第 5–10 节（假设与五个问题、页面草图、切片选择、技术栈、追问预演、后续模块）见 [partb.md](partb.md)。
 
 ## 1. 我怎么理解这个业务
 
@@ -17,7 +19,7 @@ Austin Education 全栈工程师技术作业 · Part A
 
 1. **课时是钱。** 预付资产，每次扣减都是资金变动。必须是账本式（不可变、可追溯、可对账），不是一个随手改的数字字段。
 2. **试听是市场动作，正式课是交付动作。** 试听免费、限次、目的是转化——它天生适合做成一张**券**：发出去、约掉、上完、跟进、转化，每个状态都可追踪可告警。
-3. **家长和学生不是同一个人，数据上也不是同一行。** 上课的是学生，付钱与被沟通的是家长；一个家长常有多个孩子，一个孩子可能有多位家长。家长独立成表、关系表多对多连接——**设计已定稿，实现排在家长系统批次（v2）**；v1 联系走学生电话（实际多为家长手机）。
+3. **家长和学生不是同一个人，数据上也不是同一行。** 上课的是学生，付钱与被沟通的是家长；一个家长常有多个孩子，一个孩子可能有多位家长。家长独立成表、关系表多对多连接——**只读门户已随 v1 上线**（家长登录看孩子的余额与课表，零写入口）；付款与沟通的全量 CRM 排 v2，v1 联系走学生电话（实际多为家长手机）。
 4. **冲突的本质是时间，不是数量。** 周六上午数学班、下午英文班完全正常。规则定义在时间轴上（重叠即冲突），不限制班数。
 5. **机构的节奏是"周"。** 固定班 = 每周同一时间的循环课。Class（循环定义）与 Lesson（某周的具体一节）必须分开。
 6. **反馈和点名第二版再做**。这是质量改进的关键，但初期完全可以继续线下完成。
@@ -29,17 +31,17 @@ Austin Education 全栈工程师技术作业 · Part A
 | **做** | 试听券全生命周期、转化（充值入账+排班）、排班不变量、跟进/续费/唤醒派生队列、LLM 跟进起草、学生只读课表、点名/反馈操作台（教师端）、教师可用时间登记、补课券跨班兑换、赠送课时、订单收款、家长只读门户、人工排课（建班/调班/停开） | — |
 | 不做 | 咨询登记全流程（渠道、市场来源分析） | 券上留 `source` 字段，CRM 报表后加 |
 | 不做 | 在线支付与完整家长 CRM（parent / student_parent / order 已启用：家长只读门户上线，订单线下标记 PAID） | 接入支付网关时 order 挂支付回调，账本无需迁移 |
-| 不做 | 家长门户 / 微信短信通知 | 队列已产出"该联系谁"，接触达渠道即可 |
+| 不做 | 通知触达（微信 / 短信 / 站内信） | 队列已产出"该联系谁"，触达走现有电话/微信渠道即可 |
 | 不做 | 智能排课（自动分配算法）、多校区权限、学期制报名/结课测评、线上/线下形式标记 | 人工排课已上线（建班/调班/停开，R2/R12b 强制）；课程体系对齐 austineducation.com.au（VCE 按 Units、Selective/UCAT 项目），但 term 制收费以持续课时账本近似；算法排课是查询优化，不是新实体 |
 
 ## 3. 数据模型
 
 ```
-登录角色: admin / teacher / user(学生)     [v2 加 parent]
+登录角色: admin / teacher / user(学生) / parent
   │ owner_admin_id
   ▼
 Student(status: new→tried→subscribed→ending→churning)
-  │ ──< student_parent >── Parent(付款/沟通)   [v2]
+  │ ──< student_parent >── Parent(付款/沟通)
   │ └────< Voucher(TRIAL|GIFT|DISCOUNT|RESCHEDULE) >──── (subject)
   │        TRIAL: ISSUED→REDEEMED→ATTENDED→CONVERTED
   │                ↘ NOSHOW / EXPIRED   （试听出勤 = 券状态迁移）
@@ -60,13 +62,13 @@ Student(status: new→tried→subscribed→ending→churning)
 ```
 
 - `user(id, name, phone, password_hash, owner_admin_id, status: new|tried|subscribed|ending|churning, status_changed_at)` — 学生；生命周期状态机见关键设计 1；phone 初期即家庭联系电话
-- `parent(id, name, phone, password_hash)` — 家长 **〔v2〕**
-- `student_parent(student_id, parent_id, relation, is_primary)` — 多对多 **〔v2〕**
+- `parent(id, name, phone, password_hash)` — 家长（只读门户已上线；付款/沟通 CRM 仍排 v2）
+- `student_parent(student_id, parent_id, relation, is_primary)` — 多对多
 - `admin(id, name, password_hash, level: SENIOR|JUNIOR)` — 教务两级权限 / `teacher(id, name, phone, password_hash)` — 教师（兼职），全员登录
 - `class(id, name, subject, year_level, teacher_id, weekday, start_min, end_min, start_date, end_date, capacity=12)` — 固定班 = **学期内的每周循环**（一班一周一节），lesson 只在 [start_date, end_date] 内物化；学期结束后的排班/兑换/点名入口自然关闭
 - `class_template(id, name, subject, year_level, teacher_id, weekday, start_min, end_min, capacity)` — 课程骨架（无日期无名单）；新学期开班 = 模板 + 学期起止日期，也可从任一现有班「存为模板」
 - `lesson(id, class_id, date, status)` — 按周循环、预约时按需生成的单节实例
-- `order(id, user_id, parent_id, subject, hours, amount_cents, status, voucher_id, paid_at, created_by_admin_id)` — 购买记录 **〔v2〕**
+- `order(id, user_id, parent_id, subject, hours, amount_cents, status, voucher_id, paid_at, created_by_admin_id)` — 购买记录（已提前启用：线下收款标记 PAID，接支付网关排 v2）
 - `order_lesson(id, lesson_id, student_id, order_id?, voucher_id?)` — 预约关联表：券/订单占了哪节课；目标 lesson 不存在则现场物化（v1 仅有券侧数据，order 侧 v2 启用）
 - `student_time(id, user_id, class_id, status, started_at)` — 报名；ACTIVE 唯一 (user, class)
 - `caiwu(id, user_id, delta, reason: PURCHASE|ATTENDANCE|GRANT|ADJUST|REFUND, status, ref, balance_after, by_admin_id, created_at)` — 唯一账本，部分唯一索引 (reason, user, ref)

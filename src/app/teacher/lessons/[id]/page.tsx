@@ -6,6 +6,7 @@ import RollCallPanel, { type PanelOccupant } from "./panel";
 
 // 点名 / 反馈操作台。名单 = 在读名单 + 本节单节占位（试听/补课）。
 // 点名分发见 lib/rollcall.ts：在读与补课照扣课时，试听走券状态机。
+// 「新入班」= studentTime.startedAt 距本节课 ≤14 天，让老师一眼看到今天谁是新来的。
 export default async function TeacherLessonPage({ params }: { params: Promise<{ id: string }> }) {
   const teacher = await getTeacherSession();
   if (!teacher) redirect("/login");
@@ -31,12 +32,20 @@ export default async function TeacherLessonPage({ params }: { params: Promise<{ 
   const attendanceByUser = new Map(attendance.map((c) => [c.userId, c]));
   const feedbackByUser = new Map(lesson.feedbacks.map((f) => [f.studentId, f.note]));
 
-  type Occ = { studentId: number; name: string; type: PanelOccupant["type"]; marked: string | null };
+  const NEW_STUDENT_DAYS = 14;
+  const lessonStartMs = new Date(`${lesson.date}T00:00:00Z`).getTime();
+  type Occ = { studentId: number; name: string; type: PanelOccupant["type"]; isNew?: boolean; marked: string | null };
   const seen = new Set<number>();
   const occupants: Occ[] = [];
   for (const st of roster) {
     seen.add(st.userId);
-    occupants.push({ studentId: st.userId, name: st.user.name, type: "在读", marked: attendanceByUser.get(st.userId)?.status ?? null });
+    occupants.push({
+      studentId: st.userId,
+      name: st.user.name,
+      type: "在读",
+      isNew: st.startedAt.getTime() >= lessonStartMs - NEW_STUDENT_DAYS * 86400000,
+      marked: attendanceByUser.get(st.userId)?.status ?? null,
+    });
   }
   for (const ol of lesson.orderLessons) {
     if (seen.has(ol.studentId)) continue;
@@ -67,7 +76,7 @@ export default async function TeacherLessonPage({ params }: { params: Promise<{ 
         )}
       </div>
       <p className="muted" style={{ fontSize: 13 }}>
-        出勤与缺勤都照扣课时（每一次实际授课都有成本）；试听学生免费，出勤即券状态迁移；余额不足的学生会在这里被单独指出，由教务处理。
+        出勤与缺勤都照扣课时（每一次实际授课都有成本）；试听学生免费，出勤即券状态迁移；「新入班」= 最近 14 天内进班的学生；余额不足的学生会在这里被单独指出，由教务处理。
       </p>
     </>
   );

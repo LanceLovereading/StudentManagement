@@ -8,6 +8,7 @@ export type PanelOccupant = {
   studentId: number;
   name: string;
   type: "在读" | "试听" | "补课";
+  isNew?: boolean;
   marked: string | null; // PRESENT / NOSHOW / ATTENDED / 已作废 / null=未点名
   feedback: string;
 };
@@ -51,7 +52,11 @@ export default function RollCallPanel({ lessonId, occupants }: { lessonId: numbe
         <tbody>
           {occupants.map((o) => (
             <tr key={o.studentId}>
-              <td><strong>{o.name}</strong>{errMap.get(o.studentId) && <div><span className="muted" style={{ fontSize: 12 }}>⚠ {errMap.get(o.studentId)}</span></div>}</td>
+              <td>
+                <strong>{o.name}</strong>{" "}
+                {o.isNew && <span className="badge warn">新入班</span>}
+                {errMap.get(o.studentId) && <div><span className="muted" style={{ fontSize: 12 }}>⚠ {errMap.get(o.studentId)}</span></div>}
+              </td>
               <td><span className={`badge ${o.type === "在读" ? "ok" : o.type === "试听" ? "" : "warn"}`}>{o.type}</span></td>
               <td>
                 {o.marked ? (

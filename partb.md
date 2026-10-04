@@ -65,7 +65,7 @@ Admin 导航只有两项：**工作台**（= 今天的欠账：跟进/续费/唤
 
 ## 8. 技术栈
 
-Next.js（App Router）+ TypeScript 全栈；Prisma + SQLite（部署则换 Postgres/Turso）；credentials + session 登录（admin → 工作台，user → 我的课表（只读）；teacher 登录随教师模块下批，parent 随 v2），ADMIN 角色中间件 + 行级过滤实现 R6；seed 脚本生成 1 senior + 2 junior admin × 各 12~15 学生、7 个固定班（对齐 austineducation.com.au 课程体系：VCE Maths Methods / English & EAL / Chemistry 按 Units、Year 分层班、Selective Entry Y8-9、UCAT 纯线上；含下周 Lesson）、多种状态的券、几笔手工充值流水、余额 0~15 不等的账本——保证工作台三个数字都有戏可演。时区：Class 存 weekday + 本地时间，Lesson.date 按 `Australia/Melbourne` 生成，全程不做时区换算。部署 Vercel，README 附链接。
+Next.js（App Router）+ TypeScript 全栈；Prisma + PostgreSQL（Neon 就绪，本地任意 Postgres 均可）；credentials + session 登录（admin → 工作台，user → 我的课表（只读），teacher → 点名/可用时间，parent → 只读门户），ADMIN 角色中间件 + 行级过滤实现 R6；seed 脚本生成 1 senior + 2 junior admin、24 名学生、4 名教师、3 位家长、7 个固定班（对齐 austineducation.com.au 课程体系：VCE Maths Methods / English & EAL / Chemistry 按 Units、Year 分层班、Selective Entry Y8-9、UCAT 纯线上；含下周 Lesson）、多种状态的券、几笔手工充值流水、余额 0~15 不等的账本——保证工作台三个数字都有戏可演。时区：Class 存 weekday + 本地时间，Lesson.date 按 `Australia/Melbourne` 生成，全程不做时区换算。部署 Vercel，README 附链接。
 
 ## 9. 附录（原 SCHEMA.md 收编）
 
@@ -90,13 +90,13 @@ Next.js（App Router）+ TypeScript 全栈；Prisma + SQLite（部署则换 Post
 
 出勤事实与扣减耦合在同一张表：点名页 = caiwu 写入器；"谁还没点名" = 名单 LEFT JOIN caiwu 的 NOT EXISTS 查询。可接受——如果未来反馈/考勤报表变复杂，再把事实表拆出去是一次单表迁移，不影响账本。
 
-## 10. 后续模块（切片验收后并入）
+## 10. 后续模块（已并入——「架构立住之后，剩下都是加模块」的现场验证）
 
 以"架构立住之后，剩下都是加模块"为验收：全部在不动既有表语义的前提下插入，没有为任何一个模块新立平行账本。
 
 | 模块 | 落点 | 规则 |
 |---|---|---|
-| 点名/反馈操作台（教师端） | `/teacher/lessons/[id]`；分发逻辑 `lib/rollcall.ts` | R4（幂等不穿透，逐生独立）、R11（照扣）、R14（事件迁移） |
+| 点名/反馈操作台（教师端） | `/teacher/lessons/[id]`；分发逻辑 `lib/rollcall.ts`；「新入班」徽章 = 入班 ≤14 天，点名台直接回答"今天班里谁是新来的" | R4（幂等不穿透，逐生独立）、R11（照扣）、R14（事件迁移） |
 | 教师登录 + 可上课时间 | `/teacher/availability`（按具体日期登记） | R12a 同师同日时段不重叠（int 比较） |
 | 补课券跨班兑换 | 兑换页接受 RESCHEDULE，跨科目选班 | R11（预约权非免扣）、R13、R1/R7 |
 | 赠送课时 | `/api/grant` → caiwu(+N, GRANT) | 与充值同源，对账统一 |
