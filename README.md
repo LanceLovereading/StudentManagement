@@ -97,41 +97,26 @@ LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=...
 
 ## 部署（Vercel + Neon）
 
-线上形态 = Vercel（应用）+ Neon（Postgres）。provider 在开发期就从 SQLite 切到了 Postgres，业务代码与种子零改动。
+**Neon 侧已完成**：`neon login` → `neon link`（project `odd-shape-59489822`，branch `production`，ap-southeast-2）→ `neon config init` + `neon deploy`；`db:push` + `db:seed` 已对 production 分支跑过（演示数据就位，**不要再跑 seed，它会清库重建**）。连接串由 `neon link` 写入本地 `.env`：`DATABASE_URL`（pooled）给运行时，`DATABASE_URL_UNPOOLED`（direct）给建表/种子；Prisma 过 PgBouncer 所需的 `pgbouncer=true` 由 `src/lib/db.ts` 自动追加，不怕 neon 回写覆盖。
 
-**0. 前提**：Neon 与 Vercel 各一个账号（均可用 GitHub 登录）。Neon 建库时区域选 `ap-southeast-2`（悉尼，离墨尔本用户最近）。
-
-**1. 建库 + 种子（本机跑，用 Neon 的 direct 连接串——主机不带 `-pooler`）**
-
-```bash
-DATABASE_URL="postgresql://<user>:<pw>@ep-xxx.ap-southeast-2.aws.neon.tech/neondb?sslmode=require" npm run db:push
-DATABASE_URL="postgresql://<同上>" npm run db:seed
-```
-
-⚠️ `db:seed` 会**清空重建全部数据**——线上库只跑这一次（演示数据就位后不要再跑）。
-
-**2. 部署到 Vercel**
+**剩余步骤 = Vercel**（都能 GitHub 登录）：
 
 ```bash
 npm i -g vercel
 vercel                      # 首次引导登录 + 导入项目，构建选项全部默认
-vercel env add DATABASE_URL production   # 粘 pooled 串（主机带 -pooler）+ &pgbouncer=true
+vercel env add DATABASE_URL production   # 粘 .env 里 DATABASE_URL 的值（pooled 串）
 vercel env add SESSION_SECRET production # openssl rand -base64 32
 vercel --prod
+vercel env add APP_URL production        # https://<你的应用>.vercel.app，回填后必须再 vercel --prod 一次
 ```
 
-**3. 回填 APP_URL 并重发**（重要，只差这一步会话就完整了）
+`APP_URL` 决定会话 cookie 的 Secure 标志（见 `session-options.ts` 注释——Safari 拒绝在明文 HTTP 上保存 Secure cookie，这是本地调试踩过的坑；部署天然 HTTPS，回填即生效）。
 
-```bash
-vercel env add APP_URL production        # https://<你的应用>.vercel.app
-vercel --prod
-```
+**可选**：`LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL`（任何 OpenAI 兼容接口；不配置时跟进话术起草降级为空白框，流程照常走通）。
 
-会话 cookie 的 Secure 标志由 `APP_URL`/`VERCEL` 推导（见 `session-options.ts` 注释——Safari 拒绝在明文 HTTP 上保存 Secure cookie，这是当初本地调试踩过的坑）；部署天然 HTTPS，回填后即生效。
+环境变量全集见 `.env.example`。演示账号与本地一致（种子已建）。若换 Neon 项目/分支：`neon link --project-id <id> --branch <branch> -y` 后重新 `DATABASE_URL="$DATABASE_URL_UNPOOLED" npm run db:push && npm run db:seed`。
 
-**4. 可选**：`LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL`（任何 OpenAI 兼容接口；不配置时跟进话术起草降级为空白框，流程照常走通）。
-
-环境变量全集见 `.env.example`。演示账号与本地一致（种子已建）。
+## AI 使用说明（按作业要求披露）
 
 ## AI 使用说明（按作业要求披露）
 
