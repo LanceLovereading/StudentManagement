@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/lib/db";
@@ -14,6 +15,22 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
   const admin = await getAdminSession();
   if (!admin) redirect("/login");
   const { id } = await params;
+  // 渐进式渲染：外壳先出，学生资料与各卡片随后流入。
+  return (
+    <Suspense
+      fallback={
+        <section className="card">
+          <div className="skeleton" style={{ height: 16, width: "40%", marginBottom: 12 }} />
+          <div className="skeleton" style={{ height: 160 }} />
+        </section>
+      }
+    >
+      <StudentData id={Number(id)} isSenior={admin.level === "SENIOR"} adminId={admin.id} />
+    </Suspense>
+  );
+}
+
+async function StudentData({ id, isSenior, adminId }: { id: number; isSenior: boolean; adminId: number }) {
   const user = await db.user.findUnique({
     where: { id: Number(id) },
     include: {
@@ -27,7 +44,7 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
     },
   });
   // R6：junior 越权即不可见
-  if (!user || (admin.level !== "SENIOR" && user.ownerAdminId !== admin.id)) notFound();
+  if (!user || (!isSenior && user.ownerAdminId !== adminId)) notFound();
 
   const balance = user.caiwu[0]?.balanceAfter ?? 0;
   const subjects = [...new Set((await db.class.findMany({ select: { subject: true } })).map((c) => c.subject))];

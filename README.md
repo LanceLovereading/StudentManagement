@@ -105,7 +105,7 @@ LLM_MODEL=openai/gpt-oss-20b
 代码仓库：<https://github.com/LanceLovereading/StudentManagement>（已连 Vercel，push 到 main 自动部署生产）
 
 - **Neon**：project `odd-shape-59489822`，branch `production`（ap-southeast-2）。`neon link/config/deploy` 已配置；建表 + 种子已跑（**不要再跑 seed，它会清库重建**）。连接串由 `neon link` 写入本地 `.env`：`DATABASE_URL`（pooled）给运行时，`DATABASE_URL_UNPOOLED`（direct）给建表/种子；Prisma 过 PgBouncer 所需的 `pgbouncer=true` 由 `src/lib/db.ts` 自动追加，不怕 neon 回写覆盖。
-- **Vercel**：项目 `austin-sms`。环境变量 `DATABASE_URL` / `SESSION_SECRET` / `APP_URL` 已配（APP_URL 决定会话 cookie 的 Secure 标志——见 `session-options.ts` 注释，Safari 拒绝在明文 HTTP 上保存 Secure cookie，这是本地调试踩过的坑）。部署保护（Vercel Authentication）已关闭以便评审直接访问；要再开：Project Settings → Deployment Protection。
+- **Vercel**：项目 `austin-sms`，函数区域 `syd1`（与 Neon ap-southeast-2 同城——函数曾留在默认的 iad1，每次查询跨洋 ~200ms 且连接重建昂贵，工作台一次加载 20s+；同城后毫秒级）。环境变量 `DATABASE_URL` / `SESSION_SECRET` / `APP_URL` 已配（APP_URL 决定会话 cookie 的 Secure 标志——见 `session-options.ts` 注释，Safari 拒绝在明文 HTTP 上保存 Secure cookie，这是本地调试踩过的坑）。部署保护（Vercel Authentication）已关闭以便评审直接访问；要再开：Project Settings → Deployment Protection。
 - **重部署**：`vercel --prod`（或 push 到 main 自动部署）。`LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` 已配置在 Vercel（NVIDIA NIM，跟进话术起草用；key 只在环境变量，不入仓库）。
 - 本地开发连 Neon（`.env` 已就位）：`npm run dev`。换 Neon 项目/分支：`neon link --project-id <id> --branch <branch> -y` 后 `DATABASE_URL="$DATABASE_URL_UNPOOLED" npm run db:push && npm run db:seed`。
 
@@ -122,6 +122,7 @@ LLM_MODEL=openai/gpt-oss-20b
 - 订单（order 表，原 v2 设计）已提前启用：线下收款标记 PAID；接支付网关时挂回调即可，账本无需迁移。家长门户先于家长 CRM：只读，无站内信/通知。
 - 账本归属：caiwu.byAdminId / byTeacherId 恰好其一（admin 记账 vs 教师点名扣减），由调用方保证。
 - 会话 cookie 的 Secure 标志由部署地址推导（APP_URL / Vercel），不跟 NODE_ENV 走——踩过的坑：生产模式下 cookie 带 Secure、本地是明文 HTTP，Safari 严格拒收导致"登录成功却永远弹回登录页"，而 Chrome/Firefox 把 localhost 当可信上下文，把这个差异藏住了。
-- 每日扫描在工作台加载时幂等执行，未引入 cron 依赖；多实例部署时改为定时任务调用 `runDailyScan()`。
+- 每日扫描由工作台加载触发，`ensureDailyScan` 按实例节流（60s 内复用同一次执行，失败不阻塞页面），幂等且不引入 cron 依赖；多实例部署时改为定时任务调用 `runDailyScan()`。
+- 页面用 Suspense 流式渲染（渐进式加载）：外壳与骨架屏先出，统计/队列/花名册等数据分区各自流入——远端数据库的首字节延迟不阻塞整页。
 - 兑换页预告与接口裁决共用 `checkSingleRedeem`——一份校验逻辑，没有第二套标准。
 - 点名/反馈操作台是账本写入器的一处实现（caiwu.byTeacherId）：在读与补课学生照扣，试听学生免费走券状态机；「新入班」徽章 = 入班 ≤14 天，点名台直接回答"今天班里谁是新来的"；种子里已有历史出勤流水供对账演示。

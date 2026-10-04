@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/lib/db";
@@ -63,13 +64,28 @@ export default async function ClassesPage({ searchParams }: { searchParams: Prom
   const admin = await getAdminSession();
   if (!admin) redirect("/login");
   const isSenior = admin.level === "SENIOR";
-  const today = melbourneToday();
   const { date: dateParam } = await searchParams;
+  const date = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : null;
 
+  // 渐进式渲染：导航外壳先出，周历/议程的数据区随后流入。
+  return (
+    <Suspense
+      fallback={
+        <section className="card">
+          <div className="skeleton" style={{ height: 16, width: "55%", marginBottom: 12 }} />
+          <div className="skeleton" style={{ height: 220 }} />
+        </section>
+      }
+    >
+      {date ? <AgendaView date={date} isSenior={isSenior} /> : <WeekView isSenior={isSenior} />}
+    </Suspense>
+  );
+}
+
+// ── 当日议程视图：?date=YYYY-MM-DD ──────────────────────────────
+async function AgendaView({ date: dateParam, isSenior }: { date: string; isSenior: boolean }) {
   const classes = await loadClasses();
-
-  // ── 当日议程视图：?date=YYYY-MM-DD ──────────────────────────────
-  if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+  {
     const wd = weekdayOf(dateParam);
     const dayClasses = classes.filter((c) => c.weekday === wd);
     const rows = await Promise.all(dayClasses.map(async (c) => {
@@ -140,8 +156,12 @@ export default async function ClassesPage({ searchParams }: { searchParams: Prom
       </>
     );
   }
+}
 
-  // ── 周视图 ──────────────────────────────────────────────────────
+// ── 周视图 ──────────────────────────────────────────────────────
+async function WeekView({ isSenior }: { isSenior: boolean }) {
+  const today = melbourneToday();
+  const classes = await loadClasses();
   const subjects = [...new Set(classes.map((c) => c.subject))];
   const teachers = await db.teacher.findMany({ select: { id: true, name: true }, orderBy: { id: "asc" } });
   const templates = isSenior

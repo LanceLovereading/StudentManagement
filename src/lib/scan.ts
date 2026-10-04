@@ -47,6 +47,20 @@ export async function runDailyScan() {
   }
 }
 
+// 扫描的节流入口：工作台多个流式分区各自 await 它，但 60s 内共享同一次执行（per 实例）。
+// 扫描是幂等维护动作，失败不阻塞页面——吞掉并清缓存，下次加载自然重试。
+export function ensureDailyScan(maxAgeMs = 60_000): Promise<void> {
+  const g = globalThis as { __austinScan?: { at: number; p: Promise<void> } };
+  const cached = g.__austinScan;
+  if (cached && Date.now() - cached.at < maxAgeMs) return cached.p;
+  const p = runDailyScan().catch((e) => {
+    console.error("[scan]", e);
+    g.__austinScan = undefined;
+  });
+  g.__austinScan = { at: Date.now(), p };
+  return p;
+}
+
 export type QueueUser = {
   id: number;
   name: string;
