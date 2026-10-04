@@ -47,7 +47,7 @@ export default async function TeacherHome() {
       </div>
       <div className="card">
         <h2>我的可上课时间</h2>
-        <p className="muted">兼职教师自助登记每周可用时段（不得重叠）。</p>
+        <p className="muted">兼职教师按具体日期自助登记可用时段（同日多段不得重叠）。</p>
         <Link className="btn" href="/teacher/availability">管理可用时间</Link>
       </div>
     </>

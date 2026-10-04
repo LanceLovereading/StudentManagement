@@ -10,6 +10,8 @@ export type ScheduleItem = {
   teacher: string;
   kind: "循环" | "单节";
   isNew: boolean;
+  startMin: number; // 日历块定位用（R1 保证学生自己的课互不重叠，无需分道）
+  endMin: number;
 };
 
 export async function getStudentSchedule(userId: number) {
@@ -50,6 +52,7 @@ export async function getStudentSchedule(userId: number) {
         time: `${String(Math.floor(st.class.startMin / 60)).padStart(2, "0")}:${String(st.class.startMin % 60).padStart(2, "0")}-${String(Math.floor(st.class.endMin / 60)).padStart(2, "0")}:${String(st.class.endMin % 60).padStart(2, "0")}`,
         teacher: st.class.teacher.name, kind: "循环",
         isNew: st.startedAt >= weekAgo && shown === 0,
+        startMin: st.class.startMin, endMin: st.class.endMin,
       });
       shown++;
     }
@@ -63,6 +66,7 @@ export async function getStudentSchedule(userId: number) {
       key: `o-${ol.id}`, date: ol.lesson.date, name: `${ol.lesson.class.name}（单节）`,
       time: `${fmt(ol.lesson.class.startMin)}-${fmt(ol.lesson.class.endMin)}`,
       teacher: "", kind: "单节", isNew: ol.createdAt >= weekAgo,
+      startMin: ol.lesson.class.startMin, endMin: ol.lesson.class.endMin,
     });
   }
 
