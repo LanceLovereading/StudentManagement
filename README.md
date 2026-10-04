@@ -95,26 +95,14 @@ LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=...
 
 未配置 / 超时 / 格式不符 → `{ok:true, degraded:true}`，前端降级为空白话术框——**券的状态机与跟进流程不依赖 LLM**。
 
-## 部署（Vercel + Neon）
+## 部署（Vercel + Neon）——已上线
 
-**Neon 侧已完成**：`neon login` → `neon link`（project `odd-shape-59489822`，branch `production`，ap-southeast-2）→ `neon config init` + `neon deploy`；`db:push` + `db:seed` 已对 production 分支跑过（演示数据就位，**不要再跑 seed，它会清库重建**）。连接串由 `neon link` 写入本地 `.env`：`DATABASE_URL`（pooled）给运行时，`DATABASE_URL_UNPOOLED`（direct）给建表/种子；Prisma 过 PgBouncer 所需的 `pgbouncer=true` 由 `src/lib/db.ts` 自动追加，不怕 neon 回写覆盖。
+**线上地址：<https://austin-sms.vercel.app>**（演示账号见上表，数据为种子演示数据）
 
-**剩余步骤 = Vercel**（都能 GitHub 登录）：
-
-```bash
-npm i -g vercel
-vercel                      # 首次引导登录 + 导入项目，构建选项全部默认
-vercel env add DATABASE_URL production   # 粘 .env 里 DATABASE_URL 的值（pooled 串）
-vercel env add SESSION_SECRET production # openssl rand -base64 32
-vercel --prod
-vercel env add APP_URL production        # https://<你的应用>.vercel.app，回填后必须再 vercel --prod 一次
-```
-
-`APP_URL` 决定会话 cookie 的 Secure 标志（见 `session-options.ts` 注释——Safari 拒绝在明文 HTTP 上保存 Secure cookie，这是本地调试踩过的坑；部署天然 HTTPS，回填即生效）。
-
-**可选**：`LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL`（任何 OpenAI 兼容接口；不配置时跟进话术起草降级为空白框，流程照常走通）。
-
-环境变量全集见 `.env.example`。演示账号与本地一致（种子已建）。若换 Neon 项目/分支：`neon link --project-id <id> --branch <branch> -y` 后重新 `DATABASE_URL="$DATABASE_URL_UNPOOLED" npm run db:push && npm run db:seed`。
+- **Neon**：project `odd-shape-59489822`，branch `production`（ap-southeast-2）。`neon link/config/deploy` 已配置；建表 + 种子已跑（**不要再跑 seed，它会清库重建**）。连接串由 `neon link` 写入本地 `.env`：`DATABASE_URL`（pooled）给运行时，`DATABASE_URL_UNPOOLED`（direct）给建表/种子；Prisma 过 PgBouncer 所需的 `pgbouncer=true` 由 `src/lib/db.ts` 自动追加，不怕 neon 回写覆盖。
+- **Vercel**：项目 `austin-sms`。环境变量 `DATABASE_URL` / `SESSION_SECRET` / `APP_URL` 已配（APP_URL 决定会话 cookie 的 Secure 标志——见 `session-options.ts` 注释，Safari 拒绝在明文 HTTP 上保存 Secure cookie，这是本地调试踩过的坑）。部署保护（Vercel Authentication）已关闭以便评审直接访问；要再开：Project Settings → Deployment Protection。
+- **重部署**：`vercel --prod`。可选变量 `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL`（任何 OpenAI 兼容接口；不配置时跟进话术起草降级为空白框，流程照常走通）。
+- 本地开发连 Neon（`.env` 已就位）：`npm run dev`。换 Neon 项目/分支：`neon link --project-id <id> --branch <branch> -y` 后 `DATABASE_URL="$DATABASE_URL_UNPOOLED" npm run db:push && npm run db:seed`。
 
 ## AI 使用说明（按作业要求披露）
 
